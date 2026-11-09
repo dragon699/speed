@@ -1,0 +1,9 @@
+**/.vscode
+**/.misc
+**/__pycache__/
+**/.cache
+**/.venv
+**/node_modules
+**/dist
+*.local
+recordings/

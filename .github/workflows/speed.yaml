@@ -1,0 +1,213 @@
+name: speed
+run-name: Deploy speed
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+    - '.github/workflows/speed.yaml'
+    - 'relay/**'
+    - 'web/**'
+    - 'common/**'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: "ghcr.io"
+  APP_REPO: "dragon699/home-k8s"
+
+
+
+jobs:
+
+  Inspect:
+    runs-on: gha-runner-speed
+    outputs:
+      items: ${{ steps.items_to_build.outputs.items }}
+    
+    steps:
+    - name: Fetch code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Prepare build candidates
+      id: items_to_build
+      run: |
+        set -euo pipefail
+
+        BASE_SHA="${{ github.event.before }}"
+        ITEMS=(
+          "relay | relay | common | .   | dragon699/speed/relay"
+          "web   | web   | web    | web | dragon699/speed/web"
+        )
+        ITEMS_TO_BUILD=()
+
+        if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+          if git rev-parse --verify "${{ github.sha }}^" >/dev/null 2>&1; then
+            BASE_SHA="$(git rev-parse --verify "${{ github.sha }}^")"
+          else
+            BASE_SHA="$(git hash-object -t tree /dev/null)"
+          fi
+        fi
+
+        CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}")"
+
+        trim() {
+          local value="$1"
+          value="${value#"${value%%[![:space:]]*}"}"
+          value="${value%"${value##*[![:space:]]}"}"
+          printf '%s' "$value"
+        }
+
+        for ITEM in "${ITEMS[@]}"; do
+          IFS='|' read -r RAW_NAME RAW_PATH RAW_DEPS RAW_CONTEXT RAW_IMAGE_NAME <<< "$ITEM"
+          NAME="$(trim "$RAW_NAME")"
+          ITEM_PATH="$(trim "$RAW_PATH")"
+          DEPS="$(trim "$RAW_DEPS")"
+          CONTEXT="$(trim "$RAW_CONTEXT")"
+          IMAGE_NAME="$(trim "$RAW_IMAGE_NAME")"
+
+          if grep -qE "^${ITEM_PATH}/|^${DEPS}/" <<< "$CHANGED_FILES"; then
+            VERSION="$(cat "${ITEM_PATH}/VERSION")"
+            ITEMS_TO_BUILD+=("{\"name\":\"${NAME}\",\"path\":\"${ITEM_PATH}\",\"context\":\"${CONTEXT}\",\"image_name\":\"${IMAGE_NAME}\",\"version\":\"${VERSION}\"}")
+          fi
+        done
+
+        printf 'items={"include":[%s]}\n' "$(IFS=,; echo "${ITEMS_TO_BUILD[*]}")" >> "$GITHUB_OUTPUT"
+
+  Deploy:
+    name: Deploy ${{ matrix.name || ' ' }}
+    needs: Inspect
+    runs-on: gha-runner-speed
+    if: ${{ needs.Inspect.outputs.items != '{"include":[]}' }}
+    strategy:
+      matrix: ${{ fromJson(needs.Inspect.outputs.items) }}
+      fail-fast: false
+    env:
+      APP_DEPLOYMENT_FILE: "manifests/apps/speed/${{ matrix.name }}.yaml"
+    timeout-minutes: 5
+
+    steps:
+    - name: Fetch code
+      uses: actions/checkout@v6
+
+    - name: Prepare registry auth
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and push
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ matrix.context }}
+        file: ${{ matrix.path }}/Dockerfile
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ matrix.version }}
+          ${{ env.REGISTRY }}/${{ matrix.image_name }}:latest
+
+    - name: Fetch devops code
+      uses: actions/checkout@v6
+      with:
+        repository: ${{ env.APP_REPO }}
+        token: ${{ secrets.APP_REPO_TOKEN }}
+        path: devops
+        fetch-depth: 0
+        ref: main
+
+    - name: Fetch latest changes
+      working-directory: devops
+      run: |
+        git config user.name "ActionsBot"
+        git fetch origin main
+        git pull --rebase origin main
+
+    - name: Bump version
+      uses: mikefarah/yq@master
+      env:
+        APP_DEPLOYMENT_FILE_PATH: "devops/${{ env.APP_DEPLOYMENT_FILE }}"
+      with:
+        cmd: yq -i '.spec.template.spec.containers[0].image = "${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ matrix.version }}"' ${{ env.APP_DEPLOYMENT_FILE_PATH }}
+
+    - name: Sync changes
+      id: deployment_changes
+      working-directory: devops
+      env:
+        COMMIT_MESSAGE: >-
+          ${{ format('speed/{0}: Bump to v{1}', matrix.name, matrix.version) }}
+      run: |
+        set -euo pipefail
+
+        git config user.name "ActionsBot"
+        git config user.email "60757051+dragon699@users.noreply.github.com"
+
+        git add "${{ env.APP_DEPLOYMENT_FILE }}"
+
+        if git diff --cached --quiet; then
+          echo "changes_detected=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        git commit -m "$COMMIT_MESSAGE"
+
+        for attempt in 1 2 3; do
+          if git push --force-with-lease origin HEAD:main; then
+            echo "changes_detected=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$attempt" -eq 3 ]]; then
+            exit 1
+          fi
+
+          git fetch origin main
+          git pull --rebase origin main
+        done
+
+    - name: Deploy
+      if: steps.deployment_changes.outputs.changes_detected == 'true'
+      env:
+        APP: speed
+      run: |
+        set -euo pipefail
+
+        SA=/var/run/secrets/kubernetes.io/serviceaccount
+        URL="https://kubernetes.default.svc/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/${APP}"
+        kube() { curl -sS --fail-with-body --cacert "$SA/ca.crt" -H "Authorization: Bearer $(cat "$SA/token")" "$@"; }
+
+        # Wait for a running operation (e.g. an auto-sync) to finish first
+        for i in $(seq 1 60); do
+          [ "$(kube "$URL" | jq -r '.operation != null')" = "false" ] && break
+          echo "Waiting for the current operation on ${APP} to finish..."
+          sleep 5
+        done
+
+        # A sync requested this way doesn't inherit the app's syncOptions (e.g. ServerSideApply)
+        PATCH=$(kube "$URL" | jq -c '{operation: {
+          initiatedBy: {username: "github-actions"},
+          sync: {prune: false, syncOptions: (.spec.syncPolicy.syncOptions // [])},
+          retry: {limit: 15, backoff: {duration: "10s", factor: 1, maxDuration: "10s"}}
+        }}')
+
+        STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        kube -X PATCH -H "Content-Type: application/merge-patch+json" "$URL" -d "$PATCH" >/dev/null
+        echo "Sync of ${APP} requested on $(TZ=Europe/Sofia date +'%d/%m at %H:%M:%S')"
+
+        for i in $(seq 1 100); do
+          read -r STARTED_AT PHASE < <(kube "$URL" | jq -r '[.status.operationState.startedAt // "", .status.operationState.phase // ""] | @tsv')
+          if [[ ! "$STARTED_AT" < "$STARTED" ]] && [[ "$PHASE" =~ ^(Succeeded|Failed|Error)$ ]]; then
+            FINISHED=$(kube "$URL" | jq -r '.status.operationState.finishedAt')
+            kube "$URL" | jq -r '"\(.status.operationState.phase): \(.status.operationState.message)",
+              "sync: \(.status.sync.status), health: \(.status.health.status)"'
+            echo "Finished on $(TZ=Europe/Sofia date -d "$FINISHED" +'%d/%m at %H:%M:%S')"
+            [ "$PHASE" = "Succeeded" ] && exit 0 || exit 1
+          fi
+          sleep 5
+        done
+        echo "Timed out waiting for the sync of ${APP}"
+        exit 1
