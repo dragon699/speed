@@ -7,6 +7,7 @@ export interface RelayState {
   car: boolean
   phone: boolean
   charging: boolean
+  phoneName: string | null
   rttMs: number | null
   error: string | null
 }
@@ -23,6 +24,7 @@ const INITIAL_STATE: RelayState = {
   car: false,
   phone: false,
   charging: false,
+  phoneName: null,
   rttMs: null,
   error: null
 }
@@ -135,6 +137,7 @@ export class Relay {
       this.state.car = message.car
       this.state.phone = message.phone
       this.state.charging = message.charging
+      this.state.phoneName = message.phone_name
     } else if (message.type === 'pong') {
       this.state.rttMs = performance.now() - message.t
     }

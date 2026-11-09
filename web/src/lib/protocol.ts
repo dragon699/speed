@@ -18,10 +18,10 @@ export interface Frame {
 export type ClientMessage =
   | { type: 'hello'; key: string }
   | { type: 'ping'; t: number }
-  | { type: 'phone'; charging: boolean }
+  | { type: 'phone'; charging: boolean; name: string | null }
 
 export type ServerMessage =
-  | { type: 'status'; car: boolean; phone: boolean; charging: boolean }
+  | { type: 'status'; car: boolean; phone: boolean; charging: boolean; phone_name: string | null }
   | { type: 'pong'; t: number }
 
 export function encodeFrame(frame: Frame): ArrayBuffer {

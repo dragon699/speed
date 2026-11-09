@@ -20,6 +20,7 @@ class Room:
         self.peers: dict[Role, WebSocket | None] = {'car': None, 'phone': None}
         self.rates: dict[Role, tuple[int, int]] = {'car': (0, 0), 'phone': (0, 0)}
         self.charging = False
+        self.phone_name: str | None = None
 
 
     def is_empty(self) -> bool:
@@ -31,7 +32,8 @@ class Room:
             'type': 'status',
             'car': self.peers['car'] is not None,
             'phone': self.peers['phone'] is not None,
-            'charging': self.charging
+            'charging': self.charging,
+            'phone_name': self.phone_name
         }
 
 
@@ -89,8 +91,9 @@ class Room:
             await self.send(peer, {'type': 'pong', 't': message.t})
 
         elif isinstance(message, MessagePhone) and role == 'phone':
-            if message.charging != self.charging:
+            if (message.charging, message.name) != (self.charging, self.phone_name):
                 self.charging = message.charging
+                self.phone_name = message.name
                 await self.broadcast_status()
 
 
@@ -133,6 +136,7 @@ class Rooms:
 
         if role == 'phone':
             room.charging = False
+            room.phone_name = None
 
         log.info('Peer left', extra={'room': room.code, 'role': role})
 

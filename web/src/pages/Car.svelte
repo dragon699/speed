@@ -1,11 +1,17 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
+  import { cubicOut } from 'svelte/easing'
+  import { Tween } from 'svelte/motion'
+  import Slider from '../components/Slider.svelte'
+  import StatusList from '../components/StatusList.svelte'
   import { ToneEngine } from '../lib/audio/engine'
   import { createCode, loadCode, loadFirstSeen, loadKey, saveCode } from '../lib/device'
+  import { loadEngine } from '../lib/engines'
   import { FrameKind } from '../lib/protocol'
   import { Rate } from '../lib/rate.svelte'
   import { Relay } from '../lib/relay.svelte'
   import { Gps, type GpsFix } from '../lib/sensors/gps'
+  import type { StatusItem } from '../lib/status'
 
   const PHONE_STALE_MS = 2000
   const IDLE_FREQUENCY_HZ = 55
@@ -14,6 +20,7 @@
   const key = loadKey()
   const code = loadCode() ?? createCode()
   const firstSeen = loadFirstSeen()
+  const engineProfile = loadEngine()
   saveCode(code)
 
   const relay = key ? new Relay('car', code, key) : null
@@ -40,7 +47,8 @@
   const phoneLive = $derived(phoneSpeed !== null && now - phoneFrameAt < PHONE_STALE_MS)
   const speed = $derived(phoneLive ? (phoneSpeed ?? 0) : (carFix?.speed ?? 0))
   const kmh = $derived(speed * 3.6)
-  const banner = $derived(getBanner())
+  const displayKmh = new Tween(0, { duration: 400, easing: cubicOut })
+  const statusItems = $derived(getStatusItems())
 
   if (relay) {
     relay.onFrame = (frame) => {
@@ -61,15 +69,49 @@
 
   gps.onError = (message) => (gpsError = message)
 
-  function getBanner(): { text: string; tone: string } {
-    if (!relay) return { text: 'Open the setup link on this device', tone: 'warn' }
-    if (relay.state.error) return { text: relay.state.error, tone: 'warn' }
-    if (!started) return { text: 'Tap Start', tone: '' }
-    if (!relay.state.connected) return { text: 'Connecting…', tone: '' }
-    if (!relay.state.phone) return { text: 'Waiting for phone…', tone: '' }
-    if (phoneSpeed !== null && !phoneLive) return { text: 'Phone paused – using car GPS', tone: 'warn' }
-    if (!relay.state.charging) return { text: 'Phone connected – place it on the charger', tone: 'warn' }
-    return { text: 'Phone ready ✓', tone: 'ok' }
+  function getStatusItems(): StatusItem[] {
+    if (!relay) return [{ icon: 'server', label: 'Server', value: 'No device key – open the setup link', tone: 'bad' }]
+
+    const state = relay.state
+    const phoneConnected = state.connected && state.phone
+
+    return [
+      getServerItem(),
+      phoneConnected
+        ? { icon: 'phone', label: 'Phone', value: state.phoneName ?? 'Connected', tone: 'ok' }
+        : { icon: 'phone', label: 'Phone', value: 'Not connected', tone: 'bad' },
+      !phoneConnected
+        ? { icon: 'charger', label: 'Charger', value: '—', tone: 'idle' }
+        : state.charging
+          ? { icon: 'charger', label: 'Charger', value: 'Charging', tone: 'ok' }
+          : { icon: 'charger', label: 'Charger', value: 'Not charging', tone: 'warn' },
+      getSpeedItem(),
+      getSoundItem()
+    ]
+  }
+
+  function getServerItem(): StatusItem {
+    const state = relay!.state
+
+    if (state.error) return { icon: 'server', label: 'Server', value: state.error, tone: 'bad' }
+    if (!started) return { icon: 'server', label: 'Server', value: 'Tap Start', tone: 'idle' }
+    if (!state.connected) return { icon: 'server', label: 'Server', value: 'Connecting…', tone: 'wait' }
+    return { icon: 'server', label: 'Server', value: 'Connected', tone: 'ok' }
+  }
+
+  function getSpeedItem(): StatusItem {
+    if (phoneLive) return { icon: 'gps', label: 'Speed', value: 'Phone GPS', tone: 'ok' }
+    if (phoneSpeed !== null) return { icon: 'gps', label: 'Speed', value: 'Car GPS – phone paused', tone: 'warn' }
+    if (carFix) return { icon: 'gps', label: 'Speed', value: 'Car GPS', tone: 'warn' }
+    if (gpsError) return { icon: 'gps', label: 'Speed', value: gpsError, tone: 'bad' }
+    return { icon: 'gps', label: 'Speed', value: started ? 'Waiting for GPS' : '—', tone: started ? 'wait' : 'idle' }
+  }
+
+  function getSoundItem(): StatusItem {
+    if (audioError) return { icon: 'sound', label: 'Sound', value: audioError, tone: 'bad' }
+    if (audioState === 'running') return { icon: 'sound', label: 'Sound', value: 'Playing', tone: 'ok' }
+    if (started) return { icon: 'sound', label: 'Sound', value: audioState, tone: 'wait' }
+    return { icon: 'sound', label: 'Sound', value: 'Off', tone: 'idle' }
   }
 
   async function start() {
@@ -82,6 +124,7 @@
 
     const context = engine.context!
     audioState = context.state
+    audioError = null
     audioInfo = `${context.sampleRate} Hz · base ${(context.baseLatency * 1000).toFixed(1)} ms · output ${(context.outputLatency * 1000).toFixed(1)} ms`
     context.onstatechange = () => (audioState = context.state)
 
@@ -114,36 +157,37 @@
     engine.setVolume(volume)
   })
 
+  $effect(() => {
+    displayKmh.target = kmh
+  })
+
   onDestroy(stop)
 </script>
 
 <svelte:window bind:innerWidth bind:innerHeight />
 
 <main class="page">
-  <header class="banner {banner.tone}">{banner.text}</header>
-
   {#if relay}
-    <section class="hero">
-      <div class="speed">{kmh.toFixed(0)}<span>km/h</span></div>
+    <section class="hero reveal" style:--i="0">
+      <div class="speed">{displayKmh.current.toFixed(0)}<span>km/h</span></div>
       <div class="side">
-        <div class="source">{phoneLive ? 'phone' : 'car GPS'}</div>
+        <div class="engine">{engineProfile.name}</div>
         <div class="code">Code <strong>{code}</strong></div>
       </div>
     </section>
+  {/if}
 
-    <section class="controls">
-      {#if started}
-        <button onclick={stop}>Stop</button>
-      {:else}
-        <button class="primary" onclick={start}>Start</button>
-      {/if}
-      <label>
-        Volume
-        <input type="range" min="0" max="1" step="0.05" bind:value={volume} />
-      </label>
+  <div class="reveal" style:--i="1">
+    <StatusList items={statusItems} />
+  </div>
+
+  {#if relay}
+    <section class="controls reveal" style:--i="2">
+      <button class:primary={!started} onclick={started ? stop : start}>{started ? 'Stop' : 'Start'}</button>
+      <Slider label="Volume" bind:value={volume} />
     </section>
 
-    <dl class="panel">
+    <dl class="panel reveal" style:--i="3">
       <dt>Car GPS</dt>
       <dd>
         {#if carFix}
@@ -166,7 +210,7 @@
       <dd>{formatMs(relay.state.rttMs)}</dd>
 
       <dt>Audio</dt>
-      <dd>{audioError ?? `${audioState} · ${audioInfo}`}</dd>
+      <dd>{audioState} · {audioInfo}</dd>
 
       <dt>Viewport</dt>
       <dd>{innerWidth} × {innerHeight} @ {devicePixelRatio}x</dd>
@@ -200,9 +244,18 @@
   }
 
   .side {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     text-align: right;
     color: var(--muted);
     font-size: 1.2rem;
+  }
+
+  .engine {
+    color: var(--text);
+    font-size: 1.6rem;
+    font-weight: 600;
   }
 
   .code strong {
@@ -217,12 +270,5 @@
     grid-template-columns: 200px 1fr;
     align-items: center;
     gap: 24px;
-  }
-
-  label {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    color: var(--muted);
   }
 </style>

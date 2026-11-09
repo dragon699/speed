@@ -16,6 +16,7 @@ class MessagePing(BaseModel):
 class MessagePhone(BaseModel):
     type: Literal['phone']
     charging: bool
+    name: str | None = Field(default=None, max_length=40)
 
 
 ControlMessage = TypeAdapter(

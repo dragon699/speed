@@ -46,8 +46,8 @@ JSON control messages:
 |---|---|
 | client → relay | `{"type":"hello","key":"…"}` (first message, within 5 s) |
 | client → relay | `{"type":"ping","t":…}` every 2 s → `{"type":"pong","t":…}` |
-| phone → relay | `{"type":"phone","charging":bool}` |
-| relay → both | `{"type":"status","car":bool,"phone":bool,"charging":bool}` |
+| phone → relay | `{"type":"phone","charging":bool,"name":"…"}` |
+| relay → both | `{"type":"status","car":bool,"phone":bool,"charging":bool,"phone_name":"…"\|null}` |
 
 Close codes: `4401` bad key, `4409` replaced by a newer connection, `4429` too many rooms.
 
