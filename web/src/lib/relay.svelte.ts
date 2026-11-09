@@ -1,4 +1,4 @@
-import { decodeFrame, encodeFrame, type ClientMessage, type Frame, type ServerMessage } from './protocol'
+import { decodeFrames, encodeFrames, type ClientMessage, type Frame, type ServerMessage } from './protocol'
 
 export type Role = 'car' | 'phone'
 
@@ -8,6 +8,7 @@ export interface RelayState {
   phone: boolean
   charging: boolean
   phoneName: string | null
+  recording: boolean
   rttMs: number | null
   error: string | null
 }
@@ -25,6 +26,7 @@ const INITIAL_STATE: RelayState = {
   phone: false,
   charging: false,
   phoneName: null,
+  recording: false,
   rttMs: null,
   error: null
 }
@@ -61,8 +63,13 @@ export class Relay {
     this.state = { ...INITIAL_STATE }
   }
 
-  sendFrame(frame: Frame) {
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(encodeFrame(frame))
+  sendFrames(frames: Frame[]): number {
+    if (this.socket?.readyState !== WebSocket.OPEN || !frames.length) return 0
+
+    const buffer = encodeFrames(frames)
+    this.socket.send(buffer)
+
+    return buffer.byteLength
   }
 
   sendControl(message: ClientMessage) {
@@ -91,8 +98,7 @@ export class Relay {
         return
       }
 
-      const frame = decodeFrame(event.data)
-      if (frame) this.onFrame?.(frame)
+      for (const frame of decodeFrames(event.data)) this.onFrame?.(frame)
     }
 
     socket.onclose = (event: CloseEvent) => this.handleClose(event.code)
@@ -138,6 +144,7 @@ export class Relay {
       this.state.phone = message.phone
       this.state.charging = message.charging
       this.state.phoneName = message.phone_name
+      this.state.recording = message.recording
     } else if (message.type === 'pong') {
       this.state.rttMs = performance.now() - message.t
     }

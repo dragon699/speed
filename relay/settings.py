@@ -20,7 +20,11 @@ class Settings(BaseSettings):
     device_key: SecretStr
     hello_timeout_seconds: float = Field(default=5, gt=0)
     max_rooms: int = Field(default=4, gt=0)
-    max_frames_per_second: int = Field(default=400, gt=0)
+    max_messages_per_second: int = Field(default=200, gt=0)
+
+    recordings_dir: str = '/data'
+    max_recording_bytes: int = Field(default=200_000_000, gt=0)
+    max_recordings_bytes: int = Field(default=1_800_000_000, gt=0)
 
 
     def model_post_init(self, __context: Any) -> None:

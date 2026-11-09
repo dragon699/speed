@@ -1,10 +1,11 @@
-import json, time
+import asyncio, json, time
 from typing import Literal
 from fastapi import WebSocket
 from pydantic import ValidationError
 from common.protocol.frames import Frame
 from relay.settings import settings
-from relay.src.schemas.messages import ControlMessage, MessagePing, MessagePhone
+from relay.src.recorder import Recorder
+from relay.src.schemas.messages import ControlMessage, MessagePing, MessagePhone, MessageRecord
 from relay.src.telemetry.logging import log
 
 
@@ -21,6 +22,7 @@ class Room:
         self.rates: dict[Role, tuple[int, int]] = {'car': (0, 0), 'phone': (0, 0)}
         self.charging = False
         self.phone_name: str | None = None
+        self.recorder: Recorder | None = None
 
 
     def is_empty(self) -> bool:
@@ -33,7 +35,8 @@ class Room:
             'car': self.peers['car'] is not None,
             'phone': self.peers['phone'] is not None,
             'charging': self.charging,
-            'phone_name': self.phone_name
+            'phone_name': self.phone_name,
+            'recording': self.recorder is not None
         }
 
 
@@ -45,7 +48,7 @@ class Room:
             self.rates[role] = (now, 1)
             return True
 
-        if count >= settings.max_frames_per_second:
+        if count >= settings.max_messages_per_second:
             return False
 
         self.rates[role] = (second, count + 1)
@@ -74,10 +77,45 @@ class Room:
 
 
     async def forward(self, role: Role, data: bytes) -> None:
-        if role != 'phone' or not Frame.is_valid(data) or not self.is_within_rate(role):
+        if role != 'phone' or not Frame.is_valid_batch(data) or not self.is_within_rate(role):
             return
 
-        await self.send(self.peers['car'], data)
+        if self.recorder:
+            await self.recorder.write(data)
+
+            if self.recorder.full:
+                await self.stop_recording()
+
+        forwarded = Frame.filter_forwarded(data)
+
+        if forwarded:
+            await self.send(self.peers['car'], forwarded)
+
+
+    async def start_recording(self) -> None:
+        if self.recorder:
+            return
+
+        if not await asyncio.to_thread(Recorder.has_space):
+            log.warning('Recording refused, storage limit reached', extra={'room': self.code})
+            return
+
+        self.recorder = Recorder(self.code)
+        log.info('Recording started', extra={'room': self.code, 'file': self.recorder.path.name})
+        await self.broadcast_status()
+
+
+    async def stop_recording(self) -> None:
+        if not self.recorder:
+            return
+
+        recorder, self.recorder = self.recorder, None
+        await recorder.flush()
+
+        log.info('Recording stopped', extra={
+            'room': self.code, 'file': recorder.path.name, 'bytes': recorder.size, 'full': recorder.full
+        })
+        await self.broadcast_status()
 
 
     async def handle_control(self, role: Role, peer: WebSocket, text: str) -> None:
@@ -89,6 +127,12 @@ class Room:
 
         if isinstance(message, MessagePing):
             await self.send(peer, {'type': 'pong', 't': message.t})
+
+        elif isinstance(message, MessageRecord) and role == 'phone':
+            if message.on:
+                await self.start_recording()
+            else:
+                await self.stop_recording()
 
         elif isinstance(message, MessagePhone) and role == 'phone':
             if (message.charging, message.name) != (self.charging, self.phone_name):
@@ -138,9 +182,13 @@ class Rooms:
             room.charging = False
             room.phone_name = None
 
+            if room.recorder:
+                await room.recorder.flush()
+
         log.info('Peer left', extra={'room': room.code, 'role': role})
 
         if room.is_empty():
+            await room.stop_recording()
             self.rooms.pop(room.code, None)
         else:
             await room.broadcast_status()

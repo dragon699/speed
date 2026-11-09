@@ -3,11 +3,13 @@
   import { slide } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import StatusList from '../components/StatusList.svelte'
+  import Toggle from '../components/Toggle.svelte'
   import { detectPhoneName, isValidCode, loadCode, loadKey, loadPhoneName, saveCode, savePhoneName } from '../lib/device'
-  import { FrameKind } from '../lib/protocol'
+  import { FrameKind, type Frame } from '../lib/protocol'
   import { Rate } from '../lib/rate.svelte'
   import { Relay } from '../lib/relay.svelte'
   import { Gps, type GpsFix } from '../lib/sensors/gps'
+  import { Motion, magnitude, type MotionSample } from '../lib/sensors/motion'
   import type { StatusItem } from '../lib/status'
 
   interface BatteryManager extends EventTarget {
@@ -16,10 +18,13 @@
   }
 
   const GOOD_ACCURACY_M = 20
+  const MOTION_TIMEOUT_MS = 2000
+  const REFRESH_MS = 500
 
   const key = loadKey()
   const gps = new Gps()
   const gpsRate = new Rate()
+  const motion = new Motion()
 
   const storedName = loadPhoneName()
 
@@ -30,8 +35,22 @@
   let gpsError = $state<string | null>(null)
   let charging = $state<boolean | null>(null)
   let screenLocked = $state(false)
-  let wakeLock: WakeLockSentinel | null = null
+  let motionHz = $state(0)
+  let motionView = $state<MotionSample | null>(null)
+  let motionUnavailable = $state(false)
+  let recordWanted = $state(false)
+  let recordingSince = $state<number | null>(null)
+  let recordedBytes = $state(0)
+  let clock = $state(Date.now())
 
+  let wakeLock: WakeLockSentinel | null = null
+  let refreshTimer = 0
+  let motionStartedAt = 0
+  let motionSamples = 0
+  let lastSample: MotionSample | null = null
+  let sentBytes = 0
+
+  const recording = $derived(!!relay?.state.recording)
   const statusItems = $derived(getStatusItems())
 
   if (!storedName) detectPhoneName().then((detected) => (name ||= detected))
@@ -40,10 +59,56 @@
     fix = next
     gpsError = null
     gpsRate.tick()
-    relay?.sendFrame({ t: Date.now(), kind: FrameKind.GpsSpeed, value: next.speed })
+    send([
+      { t: next.t, kind: FrameKind.GpsSpeed, value: next.speed },
+      { t: next.t, kind: FrameKind.GpsAccuracy, value: next.accuracy }
+    ])
   }
 
   gps.onError = (message) => (gpsError = message)
+
+  motion.onSample = (sample) => {
+    motionSamples++
+    lastSample = sample
+
+    if (recording) send(toFrames(sample))
+  }
+
+  $effect(() => {
+    if (recording && recordingSince === null) {
+      recordingSince = Date.now()
+      sentBytes = 0
+      recordedBytes = 0
+    } else if (!recording && recordingSince !== null) {
+      recordingSince = null
+    }
+  })
+
+  function send(frames: Frame[]) {
+    const bytes = relay?.sendFrames(frames) ?? 0
+    if (recording) sentBytes += bytes
+  }
+
+  function toFrames(sample: MotionSample): Frame[] {
+    const frames: Frame[] = []
+    const add = (kinds: FrameKind[], vector: number[] | null) =>
+      vector?.forEach((value, index) => frames.push({ t: sample.t, kind: kinds[index], value }))
+
+    add([FrameKind.AccelX, FrameKind.AccelY, FrameKind.AccelZ], sample.accel)
+    add([FrameKind.LinearAccelX, FrameKind.LinearAccelY, FrameKind.LinearAccelZ], sample.linear)
+    add([FrameKind.RotationAlpha, FrameKind.RotationBeta, FrameKind.RotationGamma], sample.rotation)
+
+    return frames
+  }
+
+  function refresh() {
+    clock = Date.now()
+    motionHz = Math.round((motionSamples * 1000) / REFRESH_MS)
+    motionSamples = 0
+    motionView = lastSample
+    motionUnavailable = !lastSample && performance.now() - motionStartedAt > MOTION_TIMEOUT_MS
+    recordedBytes = sentBytes
+  }
 
   function getStatusItems(): StatusItem[] {
     if (!key) return [{ icon: 'server', label: 'Server', value: 'No device key – open the setup link', tone: 'bad' }]
@@ -61,6 +126,8 @@
           ? { icon: 'charger', label: 'Charger', value: 'Charging', tone: 'ok' }
           : { icon: 'charger', label: 'Charger', value: 'Not charging', tone: 'warn' },
       getGpsItem(),
+      getMotionItem(),
+      getRecordingItem(),
       !relay
         ? { icon: 'screen', label: 'Screen', value: '—', tone: 'idle' }
         : screenLocked
@@ -84,6 +151,36 @@
     return { icon: 'gps', label: 'GPS', value, tone: fix.accuracy <= GOOD_ACCURACY_M ? 'ok' : 'warn' }
   }
 
+  function getMotionItem(): StatusItem {
+    if (!relay) return { icon: 'motion', label: 'Motion', value: '—', tone: 'idle' }
+    if (motionUnavailable) return { icon: 'motion', label: 'Motion', value: 'Unavailable', tone: 'bad' }
+    if (!motionHz) return { icon: 'motion', label: 'Motion', value: 'Waiting', tone: 'wait' }
+    return { icon: 'motion', label: 'Motion', value: `${motionHz} Hz`, tone: 'ok' }
+  }
+
+  function getRecordingItem(): StatusItem {
+    if (!recordWanted) return { icon: 'record', label: 'Recording', value: 'Off', tone: 'idle' }
+    if (!recording || recordingSince === null) return { icon: 'record', label: 'Recording', value: 'Starting…', tone: 'wait' }
+
+    const value = `${formatDuration(clock - recordingSince)} · ${formatBytes(recordedBytes)}`
+    return { icon: 'record', label: 'Recording', value, tone: 'ok' }
+  }
+
+  function formatBytes(bytes: number): string {
+    return bytes < 1e6 ? `${Math.round(bytes / 1e3)} kB` : `${(bytes / 1e6).toFixed(1)} MB`
+  }
+
+  function formatDuration(ms: number): string {
+    const seconds = Math.max(0, Math.floor(ms / 1000))
+    const minutes = Math.floor(seconds / 60)
+    return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
+  }
+
+  function formatVector(vector: number[] | null | undefined, unit: string): string {
+    if (!vector) return '—'
+    return `${magnitude(vector as [number, number, number]).toFixed(2)} ${unit}`
+  }
+
   async function start() {
     code = code.trim().toUpperCase()
     name = name.trim()
@@ -92,18 +189,35 @@
     saveCode(code)
     savePhoneName(name)
     relay = new Relay('phone', code, key)
-    relay.onOpen = reportPhone
+    relay.onOpen = () => {
+      reportPhone()
+      if (recordWanted) reportRecording()
+    }
     relay.start()
     gps.start()
+
+    motionStartedAt = performance.now()
+    motionUnavailable = !(await motion.start())
+    refreshTimer = window.setInterval(refresh, REFRESH_MS)
 
     await watchBattery()
     await lockScreen()
   }
 
   async function stop() {
+    if (recordWanted) {
+      recordWanted = false
+      reportRecording()
+    }
+
+    clearInterval(refreshTimer)
+    motion.stop()
     gps.stop()
     relay?.stop()
     relay = null
+    lastSample = null
+    motionView = null
+    motionHz = 0
     await wakeLock?.release()
     wakeLock = null
     screenLocked = false
@@ -129,6 +243,10 @@
 
   function reportPhone() {
     relay?.sendControl({ type: 'phone', charging: charging ?? false, name: name || null })
+  }
+
+  function reportRecording() {
+    relay?.sendControl({ type: 'record', on: recordWanted })
   }
 
   async function lockScreen() {
@@ -167,6 +285,15 @@
           <input type="text" maxlength="40" bind:value={name} />
         </label>
       </section>
+    {:else}
+      <div transition:slide={{ duration: 350, easing: cubicOut }}>
+        <Toggle
+          label="Record drive"
+          bind:checked={recordWanted}
+          disabled={!relay.state.connected}
+          onchange={reportRecording}
+        />
+      </div>
     {/if}
 
     <button
@@ -188,6 +315,15 @@
           —
         {/if}
       </dd>
+
+      <dt>Accel</dt>
+      <dd>{formatVector(motionView?.accel, 'm/s²')}</dd>
+
+      <dt>Linear accel</dt>
+      <dd>{formatVector(motionView?.linear, 'm/s²')}</dd>
+
+      <dt>Rotation</dt>
+      <dd>{formatVector(motionView?.rotation, '°/s')}</dd>
 
       <dt>Relay RTT</dt>
       <dd>{relay?.state.rttMs == null ? '—' : `${relay.state.rttMs.toFixed(0)} ms`}</dd>

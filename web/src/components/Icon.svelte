@@ -36,6 +36,11 @@
   {:else if name === 'sound'}
     <path d="M11 5 6 9H3v6h3l5 4V5Z" />
     <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+  {:else if name === 'motion'}
+    <path d="M3 12h3l3-8 6 16 3-8h3" />
+  {:else if name === 'record'}
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="4" fill="currentColor" />
   {:else if name === 'screen'}
     <rect x="5" y="11" width="14" height="10" rx="2" />
     <path d="M8 11V7a4 4 0 0 1 8 0v4" />

@@ -19,6 +19,11 @@ class MessagePhone(BaseModel):
     name: str | None = Field(default=None, max_length=40)
 
 
+class MessageRecord(BaseModel):
+    type: Literal['record']
+    on: bool
+
+
 ControlMessage = TypeAdapter(
-    Annotated[MessagePing | MessagePhone, Field(discriminator='type')]
+    Annotated[MessagePing | MessagePhone | MessageRecord, Field(discriminator='type')]
 )
