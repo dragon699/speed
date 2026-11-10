@@ -8,6 +8,8 @@ const SETTLE_S = 1
 const MOVED_DEG = 20
 const MOVED_HOLD_S = 1
 const RESTORE_MAX_DEG = 10
+const RETURN_HOLD_S = 1.5
+const MAX_KNOWN_MOUNTS = 3
 const MIN_INTERVAL_S = 0.5
 const MAX_INTERVAL_S = 3
 const MIN_INTERVAL_SAMPLES = 5
@@ -41,7 +43,8 @@ export class MountEstimator {
   private settledAt: number | null = null
   private anchor: Vec3 | null = null
   private movedSince: number | null = null
-  private saved: MountSnapshot | null = null
+  private returnedSince: number | null = null
+  private known: MountSnapshot[] = []
   private restored = false
   private locked = false
   private lastT: number | null = null
@@ -63,7 +66,7 @@ export class MountEstimator {
   }
 
   restore(snapshot: MountSnapshot | null) {
-    this.saved = snapshot
+    this.known = snapshot ? [snapshot] : []
   }
 
   snapshot(): MountSnapshot | null {
@@ -138,18 +141,44 @@ export class MountEstimator {
 
     if (angleDeg(down, this.anchor) < MOVED_DEG) {
       this.movedSince = null
+    } else {
+      this.movedSince ??= t
+      if (t - this.movedSince >= MOVED_HOLD_S * 1000) this.reset(down)
+    }
+
+    if (!this.forward) this.watchReturn(t, down)
+  }
+
+  private watchReturn(t: number, down: Vec3) {
+    if (!this.knownAt(down)) {
+      this.returnedSince = null
       return
     }
 
-    this.movedSince ??= t
-    if (t - this.movedSince >= MOVED_HOLD_S * 1000) this.reset(down)
+    this.returnedSince ??= t
+    if (t - this.returnedSince < RETURN_HOLD_S * 1000) return
+
+    this.anchor = down
+    this.movedSince = null
+    this.returnedSince = null
+    this.applySaved(down)
   }
 
   private applySaved(down: Vec3) {
-    if (!this.saved || angleDeg(down, this.saved.down) > RESTORE_MAX_DEG) return
+    const known = this.knownAt(down)
+    if (!known) return
 
-    this.forward = normalize(reject(this.saved.forward, down))
+    this.forward = normalize(reject(known.forward, down))
     this.restored = true
+  }
+
+  private knownAt(down: Vec3): MountSnapshot | undefined {
+    return this.known.find((mount) => angleDeg(down, mount.down) <= RESTORE_MAX_DEG)
+  }
+
+  private remember(mount: MountSnapshot) {
+    const others = this.known.filter((known) => angleDeg(known.down, mount.down) > RESTORE_MAX_DEG)
+    this.known = [mount, ...others].slice(0, MAX_KNOWN_MOUNTS)
   }
 
   private reset(down: Vec3) {
@@ -187,6 +216,7 @@ export class MountEstimator {
     this.forward = learned
     this.restored = false
     this.locked = this.correlationAlong(learned) >= (this.locked ? MIN_KEEP_CORRELATION : MIN_CORRELATION)
+    if (this.locked) this.remember({ down: this.down!, forward: learned })
   }
 
   private correlationAlong(axis: Vec3): number {

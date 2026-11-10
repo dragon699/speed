@@ -17,6 +17,7 @@ export interface SimulationOptions {
   rotation?: Rotation
   movedAt?: number
   movedRotation?: Rotation
+  returnedAt?: number
   bias?: Vec3
   accelNoise?: number
   gpsNoise?: number
@@ -103,7 +104,8 @@ export function simulate(options: SimulationOptions = {}): Simulation {
   const segments = options.segments ?? DRIVE
   const mounted = options.rotation ?? rotation(37, 64, -12)
   const moved = options.movedRotation ?? rotation(-118, 20, 30)
-  const rotationAt = (t: number) => (options.movedAt !== undefined && t >= options.movedAt ? moved : mounted)
+  const rotationAt = (t: number) =>
+    options.movedAt !== undefined && t >= options.movedAt && (options.returnedAt === undefined || t < options.returnedAt) ? moved : mounted
   const bias = options.bias ?? [0.06, -0.04, 0.03]
   const accelNoise = options.accelNoise ?? 0.3
   const gpsNoise = options.gpsNoise ?? 0.15

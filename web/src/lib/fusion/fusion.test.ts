@@ -116,6 +116,21 @@ describe('speed fusion', () => {
     expect(angleDeg(fusion.mount.forward!, deviceForward(simulation.rotationAt(movedAt + 1)))).toBeLessThan(10)
   })
 
+  it('locks back in when the phone goes back into its holder', () => {
+    const movedAt = 70
+    const returnedAt = 85
+    const { points } = drive({ movedAt, returnedAt })
+    const justMoved = points.find((point) => point.t > (movedAt + 2) * 1000)!
+    const back = points.find((point) => point.t > (returnedAt + 2) * 1000 && point.calibrated)!
+
+    expect(justMoved.calibrated).toBe(false)
+    const settled = points.filter((point) => point.t > back.t + 2000 && point.t < back.t + 8000)
+
+    expect(back.t / 1000 - returnedAt).toBeLessThan(3)
+    expect(settled.every((point) => point.calibrated)).toBe(true)
+    expect(rmse(settled, (point) => point.fused!)).toBeLessThan(0.6)
+  })
+
   it('reuses the saved mount right away on the next drive', () => {
     const first = drive()
     const snapshot = first.fusion.mount.snapshot()
