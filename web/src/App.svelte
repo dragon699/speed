@@ -1,6 +1,7 @@
 <script lang="ts">
   import Car from './pages/Car.svelte'
   import Phone from './pages/Phone.svelte'
+  import Lab from './pages/Lab.svelte'
 
   const page = location.pathname.replace(/\/+$/, '')
 </script>
@@ -9,6 +10,8 @@
   <Car />
 {:else if page === '/phone'}
   <Phone />
+{:else if page === '/lab'}
+  <Lab />
 {:else}
   <main class="page home">
     <h1>Speed</h1>
