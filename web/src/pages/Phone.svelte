@@ -1,10 +1,21 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { slide } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import StatusBoard from '../components/StatusBoard.svelte'
   import Toggle from '../components/Toggle.svelte'
-  import { detectPhoneName, isValidCode, loadCode, loadKey, loadPhoneName, saveCode, savePhoneName } from '../lib/device'
+  import {
+    detectPhoneName,
+    formatCode,
+    isValidCode,
+    loadKey,
+    loadPhoneCode,
+    loadPhoneName,
+    normalizeCode,
+    savePhoneCode,
+    savePhoneName,
+    takeLinkedCode
+  } from '../lib/device'
   import { loadMount, saveMount, SpeedFusion, type FusionStatus } from '../lib/fusion/fusion'
   import { phoneStatus, type FusedView } from '../lib/phoneStatus'
   import { ScreenWakeLock, watchCharging } from '../lib/power.svelte'
@@ -19,6 +30,7 @@
   const REFRESH_MS = 500
 
   const key = loadKey()
+  const linkedCode = takeLinkedCode()
   const gps = new Gps()
   const gpsRate = new Rate()
   const motion = new Motion()
@@ -27,7 +39,7 @@
 
   const storedName = loadPhoneName()
 
-  let code = $state(loadCode() ?? '')
+  let code = $state(formatCode(linkedCode ?? loadPhoneCode() ?? ''))
   let name = $state(storedName ?? '')
   let relay = $state<Relay | null>(null)
   let fix = $state<GpsFix | null>(null)
@@ -53,7 +65,6 @@
   const recording = $derived(!!relay?.state.recording)
   const statusSections = $derived(
     phoneStatus({
-      hasKey: !!key,
       relay: relay?.state ?? null,
       charging,
       fix,
@@ -73,7 +84,16 @@
     })
   )
 
-  if (!storedName) detectPhoneName().then((detected) => (name ||= detected))
+  if (!storedName) {
+    detectPhoneName().then((detected) => {
+      name ||= detected
+      reportPhone()
+    })
+  }
+
+  onMount(() => {
+    if (linkedCode) void start()
+  })
 
   gps.onFix = (next) => {
     fix = next
@@ -135,13 +155,14 @@
   }
 
   async function start() {
-    code = code.trim().toUpperCase()
+    const normalized = normalizeCode(code)
     name = name.trim()
-    if (!key || !isValidCode(code)) return
+    if (!isValidCode(normalized)) return
 
-    saveCode(code)
+    code = formatCode(normalized)
+    savePhoneCode(normalized)
     savePhoneName(name)
-    relay = new Relay('phone', code, key)
+    relay = new Relay('phone', normalized, key)
     relay.onSignal = (signal) => link.handleSignal(signal)
     relay.onOpen = () => {
       reportPhone()
@@ -160,6 +181,11 @@
       reportPhone()
     })
     await wakeLock.acquire()
+  }
+
+  async function enableMotion() {
+    motionStartedAt = performance.now()
+    motionUnavailable = !(await motion.start())
   }
 
   async function stop() {
@@ -205,19 +231,25 @@
     <StatusBoard sections={statusSections} />
   </div>
 
-  {#if key}
-    {#if !relay}
-      <section class="form" transition:slide={{ duration: 350, easing: cubicOut }}>
-        <label>
-          Code
-          <input class="code" type="text" maxlength="8" placeholder="CODE" bind:value={code} />
-        </label>
-        <label>
-          Phone name
-          <input type="text" maxlength="40" bind:value={name} />
-        </label>
-      </section>
-    {:else}
+  {#if !relay}
+    <section class="form" transition:slide={{ duration: 350, easing: cubicOut }}>
+      <label>
+        Code
+        <input class="code" type="text" maxlength="20" placeholder="XXXX-XXXX-XXXX" autocapitalize="characters" bind:value={code} />
+      </label>
+      <label>
+        Phone name
+        <input type="text" maxlength="40" bind:value={name} />
+      </label>
+    </section>
+  {:else}
+    {#if motionUnavailable && motion.needsPermission}
+      <button class="primary" transition:slide={{ duration: 350, easing: cubicOut }} onclick={enableMotion}>
+        Enable motion sensors
+      </button>
+    {/if}
+
+    {#if relay.state.canRecord}
       <div transition:slide={{ duration: 350, easing: cubicOut }}>
         <Toggle
           label="Record drive"
@@ -227,18 +259,17 @@
         />
       </div>
     {/if}
-
-    <button
-      class="reveal"
-      class:primary={!relay}
-      style:--i="1"
-      disabled={!relay && !isValidCode(code.trim().toUpperCase())}
-      onclick={relay ? stop : start}
-    >
-      {relay ? 'Stop' : 'Start'}
-    </button>
-
   {/if}
+
+  <button
+    class="reveal"
+    class:primary={!relay}
+    style:--i="1"
+    disabled={!relay && !isValidCode(normalizeCode(code))}
+    onclick={relay ? stop : start}
+  >
+    {relay ? 'Stop' : 'Start'}
+  </button>
 </main>
 
 <style>

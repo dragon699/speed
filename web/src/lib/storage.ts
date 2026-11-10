@@ -1,6 +1,7 @@
 export const STORAGE_KEYS = {
   key: 'speed.key',
   code: 'speed.code',
+  carCode: 'speed.carCode',
   firstSeen: 'speed.firstSeen',
   phoneName: 'speed.phoneName',
   engine: 'speed.engine',

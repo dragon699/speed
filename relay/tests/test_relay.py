@@ -18,7 +18,7 @@ def client():
 def join(client, role, code, key=KEY):
     ws = client.websocket_connect(f'/ws/{role}/{code}')
     socket = ws.__enter__()
-    socket.send_text(json.dumps({'type': 'hello', 'key': key}))
+    socket.send_text(json.dumps({'type': 'hello'} if key is None else {'type': 'hello', 'key': key}))
     return ws, socket
 
 
@@ -42,9 +42,56 @@ def test_wrong_key_is_closed_with_4401(client):
     ws.__exit__(None, None, None)
 
 
+def test_short_code_needs_the_device_key(client):
+    ws, socket = join(client, 'car', 'OPEN01', key=None)
+    with pytest.raises(WebSocketDisconnect) as closed:
+        socket.receive_text()
+    assert closed.value.code == 4401
+    ws.__exit__(None, None, None)
+
+
+def test_long_code_pairs_without_a_key_but_cannot_record(client):
+    code = 'K7M2X9PQR4TD'
+    car_ws, car = join(client, 'car', code, key=None)
+    assert status(car)['can_record'] is False
+    phone_ws, phone = join(client, 'phone', code, key=None)
+    assert status(car)['phone'] is True
+    status(phone)
+
+    phone.send_bytes(Frame.pack(1.0, FrameKind.FUSED_SPEED, 12.5))
+    assert [value for _, _, value in Frame.iter_unpack(car.receive_bytes())] == [12.5]
+
+    phone.send_text(json.dumps({'type': 'record', 'on': True}))
+    phone.send_text(json.dumps({'type': 'ping', 't': 1}))
+    assert phone.receive_json()['type'] == 'pong'
+    assert not list(Path(os.environ['RECORDINGS_DIR']).glob(f'{code}-*.bin'))
+
+    phone_ws.__exit__(None, None, None)
+    car_ws.__exit__(None, None, None)
+
+
+def test_a_car_with_the_key_lets_a_paired_phone_record(client):
+    code = 'H3NQ7WZK2PLE'
+    car_ws, car = join(client, 'car', code)
+    status(car)
+    phone_ws, phone = join(client, 'phone', code, key=None)
+    assert status(phone)['can_record'] is True
+    status(car)
+
+    phone.send_text(json.dumps({'type': 'record', 'on': True}))
+    assert status(phone)['recording'] is True
+    phone.send_text(json.dumps({'type': 'record', 'on': False}))
+    assert status(phone)['recording'] is False
+
+    phone_ws.__exit__(None, None, None)
+    car_ws.__exit__(None, None, None)
+
+
 def test_pairing_status_and_phone_details(client):
     car_ws, car = join(client, 'car', 'PAIR01')
-    assert status(car) == {'type': 'status', 'car': True, 'phone': False, 'charging': False, 'phone_name': None, 'recording': False}
+    assert status(car) == {
+        'type': 'status', 'car': True, 'phone': False, 'charging': False, 'phone_name': None, 'recording': False, 'can_record': True
+    }
 
     phone_ws, phone = join(client, 'phone', 'PAIR01')
     assert status(car)['phone'] is True

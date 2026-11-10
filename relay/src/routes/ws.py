@@ -9,31 +9,36 @@ from relay.src.schemas.messages import MessageHello
 
 router = APIRouter()
 
-Code = Annotated[str, Path(pattern=r'^[A-Z0-9]{4,8}$')]
+Code = Annotated[str, Path(pattern=r'^[A-Z0-9]{4,16}$')]
 
 
-async def authenticate(peer: WebSocket) -> bool:
+async def authenticate(peer: WebSocket, code: str) -> bool | None:
     try:
         text = await asyncio.wait_for(peer.receive_text(), settings.hello_timeout_seconds)
         hello = MessageHello.model_validate_json(text)
 
     except Exception:
-        return False
+        return None
 
-    return hmac.compare_digest(
-        hello.key.encode(),
-        settings.device_key.get_secret_value().encode()
-    )
+    if hello.key is None:
+        return False if len(code) >= settings.min_open_code_length else None
+
+    if not hmac.compare_digest(hello.key.encode(), settings.device_key.get_secret_value().encode()):
+        return None
+
+    return True
 
 
 async def serve(peer: WebSocket, code: str, role: Role) -> None:
     await peer.accept()
 
-    if not await authenticate(peer):
+    trusted = await authenticate(peer, code)
+
+    if trusted is None:
         await peer.close(code=CloseCode.UNAUTHORIZED)
         return
 
-    room = await rooms.join(code, role, peer)
+    room = await rooms.join(code, role, peer, trusted)
 
     if room is None:
         await peer.close(code=CloseCode.FULL)

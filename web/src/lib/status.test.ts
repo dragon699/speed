@@ -10,6 +10,7 @@ const relay = (overrides: Partial<RelayState> = {}): RelayState => ({
   charging: true,
   phoneName: 'Galaxy S26 Ultra',
   recording: false,
+  canRecord: true,
   rttMs: 20,
   error: null,
   ...overrides
@@ -42,7 +43,6 @@ const car = (overrides: Partial<CarStatusInput> = {}): CarStatusInput => ({
 })
 
 const phone = (overrides: Partial<PhoneStatusInput> = {}): PhoneStatusInput => ({
-  hasKey: true,
   relay: relay(),
   charging: true,
   fix: { t: 0, speed: 0, accuracy: 8, derived: false },
@@ -77,6 +77,7 @@ describe('car status', () => {
       sound: 'Sound playing (ok)',
       latency: 'Phone → car 90 ms (ok)',
       link: 'WebRTC direct (same Wi-Fi) (ok)',
+      record: 'Recording available (idle)',
       viewport: '1920 × 1200 @ 1x (idle)',
       stored: 'Stored since 9 Nov 2026, 21:12 (idle)'
     })
@@ -85,6 +86,11 @@ describe('car status', () => {
       phone: 'GPS (ok) [in use]',
       charger: 'Charging (ok)'
     })
+  })
+
+  it('shows whether this session can record drives', () => {
+    expect(section(car({ relay: relay({ recording: true }) }), 'Status').record).toBe('Recording drive (ok)')
+    expect(section(car({ relay: relay({ canRecord: false }) }), 'Status').record).toBe('Recording unavailable (idle)')
   })
 
   it('waits while stopped and before start', () => {
@@ -111,10 +117,6 @@ describe('car status', () => {
 
   it('flags a slow phone to car delay', () => {
     expect(section(car({ latency: { p50: 520, p95: 900, webrtcShare: 0 } }), 'Status').latency).toBe('Phone → car 520 ms (bad)')
-  })
-
-  it('asks for the setup link without a key', () => {
-    expect(carStatus(car({ relay: null }))).toHaveLength(1)
   })
 })
 
@@ -144,6 +146,10 @@ describe('phone status', () => {
     expect(items.record).toBe('Recording 1:15 · 2.4 MB (ok)')
   })
 
+  it('says recording is unavailable without a device key in the session', () => {
+    expect(all(phoneStatus(phone({ relay: relay({ canRecord: false }), recordWanted: true }))).record).toBe('Recording unavailable (idle)')
+  })
+
   it('waits for the relay to confirm recording', () => {
     expect(all(phoneStatus(phone({ recordWanted: true }))).record).toBe('Recording starting… (wait)')
   })
@@ -167,9 +173,5 @@ describe('phone status', () => {
     expect(items.stream).toBe('Enter the car code (idle)')
     expect(items.server).toBe('Server — (idle)')
     expect(items.screen).toBe('Screen — (idle)')
-  })
-
-  it('asks for the setup link without a key', () => {
-    expect(phoneStatus(phone({ hasKey: false }))).toHaveLength(1)
   })
 })

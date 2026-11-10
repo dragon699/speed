@@ -10,7 +10,7 @@ const GOOD_LATENCY_MS = 150
 const SLOW_LATENCY_MS = 400
 
 export interface CarStatusInput {
-  relay: RelayState | null
+  relay: RelayState
   started: boolean
   moving: boolean
   manual: boolean
@@ -37,10 +37,6 @@ export interface CarStatusInput {
 type Source = 'manual' | 'fused' | 'phone' | 'car'
 
 export function carStatus(input: CarStatusInput): BulletSection[] {
-  if (!input.relay) {
-    return [{ title: 'Status', items: [{ key: 'key', icon: 'server', text: 'No device key – open the setup link', tone: 'bad' }] }]
-  }
-
   return [
     { title: 'Status', items: statusItems(input, input.relay) },
     { title: 'Sensors', items: sensorItems(input, input.relay) }
@@ -61,6 +57,7 @@ function statusItems(input: CarStatusInput, relay: RelayState): BulletItem[] {
     soundItem(input),
     latencyItem(input.latency),
     linkItem(input.link),
+    recordingItem(relay),
     { key: 'viewport', icon: 'display', text: input.viewport, tone: 'idle' },
     { key: 'stored', icon: 'clock', text: `Stored since ${input.firstSeen}`, tone: 'idle' }
   ]
@@ -130,6 +127,15 @@ function latencyTone(ms: number): Tone {
 function linkItem(link: CarStatusInput['link']): BulletItem {
   const tones: Record<LinkState, Tone> = { off: 'idle', connecting: 'wait', open: 'ok', failed: 'warn', unsupported: 'warn' }
   return { key: 'link', icon: 'link', text: `WebRTC ${linkLabel(link.state, link.route)}`, tone: tones[link.state] }
+}
+
+function recordingItem(relay: RelayState): BulletItem {
+  const item = { key: 'record', icon: 'record' } as const
+
+  if (relay.recording) return { ...item, text: 'Recording drive', detail: 'saved on the server', tone: 'ok' }
+  if (relay.canRecord) return { ...item, text: 'Recording available', detail: 'turn on "Record drive" on the phone', tone: 'idle' }
+  if (!relay.connected) return { ...item, text: 'Recording —', tone: 'idle' }
+  return { ...item, text: 'Recording unavailable', detail: 'needs the device key in the car or phone', tone: 'idle' }
 }
 
 function carGpsItem(input: CarStatusInput): BulletItem {

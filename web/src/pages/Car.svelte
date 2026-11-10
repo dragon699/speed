@@ -2,15 +2,16 @@
   import { onDestroy } from 'svelte'
   import { cubicOut } from 'svelte/easing'
   import { Tween } from 'svelte/motion'
-  import { fade } from 'svelte/transition'
+  import { fade, slide } from 'svelte/transition'
   import EnginePicker from '../components/EnginePicker.svelte'
+  import PairingCard from '../components/PairingCard.svelte'
   import Slider from '../components/Slider.svelte'
   import Tabs from '../components/Tabs.svelte'
   import StatusBoard from '../components/StatusBoard.svelte'
   import Toggle from '../components/Toggle.svelte'
   import { EngineSound } from '../lib/audio/engine'
   import { carStatus } from '../lib/carStatus'
-  import { createCode, loadCode, loadFirstSeen, loadKey, saveCode } from '../lib/device'
+  import { loadCarCode, loadFirstSeen, loadKey } from '../lib/device'
   import { Drivetrain } from '../lib/drivetrain'
   import { TestDrive } from '../lib/testDrive'
   import { engineSet, engineSets, loadEngine, saveEngine, type EngineProfile, type EngineSetId } from '../lib/engines'
@@ -29,11 +30,10 @@
   const STOPPED_SPEED = 0.5
 
   const key = loadKey()
-  const code = loadCode() ?? createCode()
+  const code = loadCarCode()
   const firstSeenLabel = new Date(loadFirstSeen()).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
-  saveCode(code)
 
-  const relay = key ? new Relay('car', code, key) : null
+  const relay = new Relay('car', code, key)
   const engine = new EngineSound()
   const gps = new Gps()
   const gpsRate = new Rate()
@@ -86,7 +86,7 @@
   const moving = $derived(speed >= STOPPED_SPEED)
   const statusSections = $derived(
     carStatus({
-      relay: relay?.state ?? null,
+      relay: relay.state,
       started,
       moving,
       manual: manualEnabled,
@@ -111,11 +111,9 @@
     })
   )
 
-  if (relay) {
-    relay.onFrames = (frames) => handleFrames(frames, 'relay')
-    relay.onSignal = (signal) => link.handleSignal(signal)
-    link.onFrames = (frames) => handleFrames(frames, 'webrtc')
-  }
+  relay.onFrames = (frames) => handleFrames(frames, 'relay')
+  relay.onSignal = (signal) => link.handleSignal(signal)
+  link.onFrames = (frames) => handleFrames(frames, 'webrtc')
 
   function handleFrames(frames: Frame[], path: Path) {
     let newest = lastFusedT
@@ -255,64 +253,67 @@
 <svelte:window bind:innerWidth bind:innerHeight />
 
 <main class="page">
-  {#if relay}
-    <section class="hero reveal" style:--i="0" style:--engine={engineProfile.color}>
-      <div class="speed">{displayKmh.current.toFixed(0)}<span>km/h</span></div>
-      <div class="drive">
-        <div class="gear"><span>Gear</span>{gear}</div>
-        <div class="rpm">{Math.round(rpm).toLocaleString('en-US')}<span>rpm</span></div>
-      </div>
-      <div class="side">
-        {#key engineProfile.id}
-          <div class="engine" in:fade={{ duration: 250 }}>{engineProfile.name}</div>
-        {/key}
-        <div class="code">Code <strong>{code}</strong></div>
-      </div>
-      <div class="tach">
-        <div class="tach-fill" style:width="{(rpm / engineProfile.redline) * 100}%"></div>
-        <div class="tach-redline" style:width="{(1 - 0.9) * 100}%"></div>
-      </div>
-    </section>
+  <section class="hero reveal" style:--i="0" style:--engine={engineProfile.color}>
+    <div class="speed">{displayKmh.current.toFixed(0)}<span>km/h</span></div>
+    <div class="drive">
+      <div class="gear"><span>Gear</span>{gear}</div>
+      <div class="rpm">{Math.round(rpm).toLocaleString('en-US')}<span>rpm</span></div>
+    </div>
+    <div class="side">
+      {#key engineProfile.id}
+        <div class="engine" in:fade={{ duration: 250 }}>{engineProfile.name}</div>
+      {/key}
+    </div>
+    <div class="tach">
+      <div class="tach-fill" style:width="{(rpm / engineProfile.redline) * 100}%"></div>
+      <div class="tach-redline" style:width="{(1 - 0.9) * 100}%"></div>
+    </div>
+  </section>
 
-    <section class="engines reveal" style:--i="1">
-      <Tabs
-        options={engineSets.map((set) => ({ id: set.id, label: set.label, hint: `${set.engines.length} engines` }))}
-        value={engineProfile.set}
-        onchange={selectSet}
-      />
-      <EnginePicker profiles={engineSet(engineProfile.set).engines} selected={engineProfile} onselect={selectEngine} />
-    </section>
-
-    <section class="controls reveal" style:--i="2">
-      <button class:primary={!started} onclick={started ? stop : start}>{started ? 'Stop' : 'Start'}</button>
-      <button
-        class="rev"
-        class:held={revHeld}
-        disabled={!started || moving}
-        onpointerdown={() => rev(true)}
-        onpointerup={() => rev(false)}
-        onpointerleave={() => rev(false)}
-        onpointercancel={() => rev(false)}
-        oncontextmenu={(event) => event.preventDefault()}
-      >
-        <strong>REV</strong>
-        <span>hold while stopped</span>
-      </button>
-      <Slider label="Volume" bind:value={volume} />
-    </section>
-
-    <section class="test reveal" style:--i="3">
-      <Toggle label="Manual speed (test)" bind:checked={manualEnabled} onchange={startTestDrive} />
-      <Slider
-        label="Target speed"
-        bind:value={manualKmh}
-        min={0}
-        max={MANUAL_MAX_KMH}
-        step={1}
-        format={(value) => `${value} km/h`}
-      />
-    </section>
+  {#if !relay.state.phone}
+    <div transition:slide={{ duration: 350 }}>
+      <PairingCard {code} />
+    </div>
   {/if}
+
+  <section class="engines reveal" style:--i="1">
+    <Tabs
+      options={engineSets.map((set) => ({ id: set.id, label: set.label, hint: `${set.engines.length} engines` }))}
+      value={engineProfile.set}
+      onchange={selectSet}
+    />
+    <EnginePicker profiles={engineSet(engineProfile.set).engines} selected={engineProfile} onselect={selectEngine} />
+  </section>
+
+  <section class="controls reveal" style:--i="2">
+    <button class:primary={!started} onclick={started ? stop : start}>{started ? 'Stop' : 'Start'}</button>
+    <button
+      class="rev"
+      class:held={revHeld}
+      disabled={!started || moving}
+      onpointerdown={() => rev(true)}
+      onpointerup={() => rev(false)}
+      onpointerleave={() => rev(false)}
+      onpointercancel={() => rev(false)}
+      oncontextmenu={(event) => event.preventDefault()}
+    >
+      <strong>REV</strong>
+      <span>hold while stopped</span>
+    </button>
+    <Slider label="Volume" bind:value={volume} />
+  </section>
+
+  <section class="test reveal" style:--i="3">
+    <Toggle label="Manual speed (test)" bind:checked={manualEnabled} onchange={startTestDrive} />
+    <Slider
+      label="Target speed"
+      bind:value={manualKmh}
+      min={0}
+      max={MANUAL_MAX_KMH}
+      step={1}
+      format={(value) => `${value} km/h`}
+    />
+  </section>
 
   <div class="reveal" style:--i="4">
     <StatusBoard sections={statusSections} />
@@ -460,13 +461,6 @@
     color: var(--engine);
     font-size: 1.6rem;
     font-weight: 600;
-  }
-
-  .code strong {
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: 2rem;
-    letter-spacing: 0.15em;
   }
 
   .controls {

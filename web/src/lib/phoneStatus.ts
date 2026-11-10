@@ -14,7 +14,6 @@ export interface FusedView {
 }
 
 export interface PhoneStatusInput {
-  hasKey: boolean
   relay: RelayState | null
   charging: boolean | null
   fix: GpsFix | null
@@ -34,10 +33,6 @@ export interface PhoneStatusInput {
 }
 
 export function phoneStatus(input: PhoneStatusInput): BulletSection[] {
-  if (!input.hasKey) {
-    return [{ title: 'Status', items: [{ key: 'key', icon: 'server', text: 'No device key – open the setup link', tone: 'bad' }] }]
-  }
-
   return [
     { title: 'Status', items: statusItems(input) },
     { title: 'Sensors', items: sensorItems(input) }
@@ -102,6 +97,9 @@ function linkItem(input: PhoneStatusInput): BulletItem {
 function recordingItem(input: PhoneStatusInput): BulletItem {
   const item = { key: 'record', icon: 'record' } as const
 
+  if (input.relay?.connected && !input.relay.canRecord) {
+    return { ...item, text: 'Recording unavailable', detail: 'needs the device key in the car or phone', tone: 'idle' }
+  }
   if (!input.recordWanted) return { ...item, text: 'Recording off', tone: 'idle' }
   if (!input.recording || input.recordingMs === null) return { ...item, text: 'Recording starting…', tone: 'wait' }
   return { ...item, text: `Recording ${formatDuration(input.recordingMs)}`, detail: formatBytes(input.recordedBytes), tone: 'ok' }

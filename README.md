@@ -63,10 +63,15 @@ JSON control messages:
 
 Close codes: `4401` bad key, `4409` replaced by a newer connection, `4429` too many rooms.
 
-## Device setup
+## Pairing
 
-Open `https://speed.iaminyourpc.xyz/#key=<DEVICE_KEY>` once on the phone and once in the car.
-The key is stored in localStorage and stripped from the URL.
+The car page gets a random 12-character room code (60 bits, kept in localStorage) and shows it as a
+QR code while no phone is connected. Scanning it opens `/phone#code=…`, which connects right away;
+the code can also be typed in. Without the device key a code must be at least 12 characters, so rooms
+can't be guessed; the relay holds up to `MAX_ROOMS` car/phone pairs.
+
+The device key is only needed for recording drives: open `https://speed.iaminyourpc.xyz/#key=<DEVICE_KEY>`
+once on the phone (stored in localStorage, stripped from the URL) and "Record drive" appears.
 
 ## Recordings
 

@@ -38,7 +38,7 @@ export interface Frame {
 }
 
 export type ClientMessage =
-  | { type: 'hello'; key: string }
+  | { type: 'hello'; key?: string }
   | { type: 'ping'; t: number }
   | { type: 'phone'; charging: boolean; name: string | null }
   | { type: 'record'; on: boolean }
@@ -52,6 +52,7 @@ export type ServerMessage =
       charging: boolean
       phone_name: string | null
       recording: boolean
+      can_record: boolean
     }
   | { type: 'pong'; t: number; server: number }
   | { type: 'signal'; data: PeerSignal }

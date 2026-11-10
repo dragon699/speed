@@ -9,6 +9,7 @@ export interface RelayState {
   charging: boolean
   phoneName: string | null
   recording: boolean
+  canRecord: boolean
   rttMs: number | null
   error: string | null
 }
@@ -26,6 +27,7 @@ const INITIAL_STATE: RelayState = {
   charging: false,
   phoneName: null,
   recording: false,
+  canRecord: false,
   rttMs: null,
   error: null
 }
@@ -38,7 +40,7 @@ export class Relay {
 
   private role: Role
   private code: string
-  private key: string
+  private key: string | null
   private socket: WebSocket | null = null
   private pingTimer = 0
   private retryTimer = 0
@@ -46,7 +48,7 @@ export class Relay {
   private running = false
   private clockSamples: { rtt: number; offset: number }[] = []
 
-  constructor(role: Role, code: string, key: string) {
+  constructor(role: Role, code: string, key: string | null) {
     this.role = role
     this.code = code
     this.key = key
@@ -89,7 +91,7 @@ export class Relay {
 
     socket.onopen = () => {
       this.lastMessageAt = performance.now()
-      this.sendControl({ type: 'hello', key: this.key })
+      this.sendControl(this.key ? { type: 'hello', key: this.key } : { type: 'hello' })
       this.state.connected = true
       this.state.error = null
       this.pingTimer = window.setInterval(() => this.ping(), PING_INTERVAL_MS)
@@ -152,6 +154,7 @@ export class Relay {
       this.state.charging = message.charging
       this.state.phoneName = message.phone_name
       this.state.recording = message.recording
+      this.state.canRecord = message.can_record
     } else if (message.type === 'pong') {
       this.trackClock(message.t, message.server)
     } else if (message.type === 'signal') {

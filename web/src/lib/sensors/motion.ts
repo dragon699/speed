@@ -21,13 +21,16 @@ export class Motion {
     if (this.listening) return true
     if (!('DeviceMotionEvent' in window)) return false
 
-    const requestPermission = (DeviceMotionEvent as unknown as { requestPermission?: PermissionRequest }).requestPermission
-    if (requestPermission && (await requestPermission()) !== 'granted') return false
+    if (this.needsPermission && !(await requestMotionPermission())) return false
 
     window.addEventListener('devicemotion', this.handler)
     this.listening = true
 
     return true
+  }
+
+  get needsPermission(): boolean {
+    return 'DeviceMotionEvent' in window && !!permissionRequest()
   }
 
   stop() {
@@ -60,6 +63,18 @@ export function motionFrames(sample: MotionSample): Frame[] {
   add([FrameKind.RotationAlpha, FrameKind.RotationBeta, FrameKind.RotationGamma], sample.rotation)
 
   return frames
+}
+
+function permissionRequest(): PermissionRequest | undefined {
+  return (DeviceMotionEvent as unknown as { requestPermission?: PermissionRequest }).requestPermission
+}
+
+async function requestMotionPermission(): Promise<boolean> {
+  try {
+    return (await permissionRequest()!.call(DeviceMotionEvent)) === 'granted'
+  } catch {
+    return false
+  }
 }
 
 function toVector(value: DeviceMotionEventAcceleration | null): Vector | null {

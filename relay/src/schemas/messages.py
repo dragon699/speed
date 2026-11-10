@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 class MessageHello(BaseModel):
     type: Literal['hello']
-    key: str
+    key: str | None = None
 
 
 class MessagePing(BaseModel):

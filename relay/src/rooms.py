@@ -20,6 +20,7 @@ class Room:
         self.code = code
         self.peers: dict[Role, WebSocket | None] = {'car': None, 'phone': None}
         self.rates: dict[Role, tuple[int, int]] = {'car': (0, 0), 'phone': (0, 0)}
+        self.trusted: dict[Role, bool] = {'car': False, 'phone': False}
         self.charging = False
         self.phone_name: str | None = None
         self.recorder: Recorder | None = None
@@ -29,6 +30,10 @@ class Room:
         return not any(self.peers.values())
 
 
+    def can_record(self) -> bool:
+        return any(self.trusted.values())
+
+
     def get_status(self) -> dict:
         return {
             'type': 'status',
@@ -36,7 +41,8 @@ class Room:
             'phone': self.peers['phone'] is not None,
             'charging': self.charging,
             'phone_name': self.phone_name,
-            'recording': self.recorder is not None
+            'recording': self.recorder is not None,
+            'can_record': self.can_record()
         }
 
 
@@ -138,7 +144,7 @@ class Room:
         elif isinstance(message, MessageSignal):
             await self.send(self.get_other(role), {'type': 'signal', 'data': message.data})
 
-        elif isinstance(message, MessageRecord) and role == 'phone':
+        elif isinstance(message, MessageRecord) and role == 'phone' and self.can_record():
             if message.on:
                 await self.start_recording()
             else:
@@ -157,7 +163,7 @@ class Rooms:
         self.rooms: dict[str, Room] = {}
 
 
-    async def join(self, code: str, role: Role, peer: WebSocket) -> Room | None:
+    async def join(self, code: str, role: Role, peer: WebSocket, trusted: bool) -> Room | None:
         room = self.rooms.get(code)
 
         if room is None:
@@ -168,6 +174,10 @@ class Rooms:
 
         replaced = room.peers[role]
         room.peers[role] = peer
+        room.trusted[role] = trusted
+
+        if not room.can_record():
+            await room.stop_recording()
 
         if replaced is not None:
             try:
@@ -176,7 +186,7 @@ class Rooms:
             except Exception:
                 pass
 
-        log.info('Peer joined', extra={'room': code, 'role': role, 'replaced': replaced is not None})
+        log.info('Peer joined', extra={'room': code, 'role': role, 'trusted': trusted, 'replaced': replaced is not None})
         await room.broadcast_status()
 
         return room
