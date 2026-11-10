@@ -18,6 +18,8 @@ def main() -> None:
               f' · accuracy median {np.median(accuracy) if len(accuracy) else float("nan"):.1f} m')
         print(f'  max speed     {recording.gps_speed.values.max() * 3.6 if len(recording.gps_speed) else 0:.0f} km/h')
 
+        print(f'  fused speed   {len(recording.fused_speed)} samples · {recording.fused_speed.rate():.1f} Hz')
+
         for label, series in (('accel', recording.accel), ('linear accel', recording.linear), ('rotation', recording.rotation)):
             print(f'  {label:<13} {len(series)} samples · {series.rate():.1f} Hz')
 

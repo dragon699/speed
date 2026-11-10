@@ -1,4 +1,4 @@
-import { decodeFrames, encodeFrames, type ClientMessage, type Frame, type ServerMessage } from './protocol'
+import { CloseCode, decodeFrames, encodeFrames, type ClientMessage, type Frame, type PeerSignal, type ServerMessage } from './protocol'
 
 export type Role = 'car' | 'phone'
 
@@ -16,9 +16,8 @@ export interface RelayState {
 const PING_INTERVAL_MS = 2000
 const STALE_AFTER_MS = 6000
 const RETRY_AFTER_MS = 2000
+const CLOCK_SAMPLES = 15
 
-const CLOSE_UNAUTHORIZED = 4401
-const CLOSE_REPLACED = 4409
 
 const INITIAL_STATE: RelayState = {
   connected: false,
@@ -33,7 +32,8 @@ const INITIAL_STATE: RelayState = {
 
 export class Relay {
   state = $state<RelayState>({ ...INITIAL_STATE })
-  onFrame: ((frame: Frame) => void) | null = null
+  onFrames: ((frames: Frame[]) => void) | null = null
+  onSignal: ((signal: PeerSignal) => void) | null = null
   onOpen: (() => void) | null = null
 
   private role: Role
@@ -44,6 +44,7 @@ export class Relay {
   private retryTimer = 0
   private lastMessageAt = 0
   private running = false
+  private clockSamples: { rtt: number; offset: number }[] = []
 
   constructor(role: Role, code: string, key: string) {
     this.role = role
@@ -72,6 +73,11 @@ export class Relay {
     return buffer.byteLength
   }
 
+  get clockOffsetMs(): number | null {
+    if (!this.clockSamples.length) return null
+    return this.clockSamples.reduce((best, sample) => (sample.rtt < best.rtt ? sample : best)).offset
+  }
+
   sendControl(message: ClientMessage) {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message))
   }
@@ -87,6 +93,7 @@ export class Relay {
       this.state.connected = true
       this.state.error = null
       this.pingTimer = window.setInterval(() => this.ping(), PING_INTERVAL_MS)
+      this.ping()
       this.onOpen?.()
     }
 
@@ -98,7 +105,7 @@ export class Relay {
         return
       }
 
-      for (const frame of decodeFrames(event.data)) this.onFrame?.(frame)
+      this.onFrames?.(decodeFrames(event.data))
     }
 
     socket.onclose = (event: CloseEvent) => this.handleClose(event.code)
@@ -108,8 +115,8 @@ export class Relay {
   private handleClose(code: number) {
     this.drop()
 
-    if (code === CLOSE_UNAUTHORIZED) return this.fail('Invalid device key – open the setup link again')
-    if (code === CLOSE_REPLACED) return this.fail('Opened on another device')
+    if (code === CloseCode.Unauthorized) return this.fail('Invalid device key – open the setup link again')
+    if (code === CloseCode.Replaced) return this.fail('Opened on another device')
 
     this.state = { ...INITIAL_STATE }
     if (this.running) this.retryTimer = window.setTimeout(() => this.connect(), RETRY_AFTER_MS)
@@ -146,7 +153,17 @@ export class Relay {
       this.state.phoneName = message.phone_name
       this.state.recording = message.recording
     } else if (message.type === 'pong') {
-      this.state.rttMs = performance.now() - message.t
+      this.trackClock(message.t, message.server)
+    } else if (message.type === 'signal') {
+      this.onSignal?.(message.data)
     }
+  }
+
+  private trackClock(sentAt: number, server: number) {
+    const rtt = performance.now() - sentAt
+    const offset = server - (performance.timeOrigin + sentAt + rtt / 2)
+
+    this.state.rttMs = rtt
+    this.clockSamples = [...this.clockSamples, { rtt, offset }].slice(-CLOCK_SAMPLES)
   }
 }

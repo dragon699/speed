@@ -1,3 +1,5 @@
+import { FrameKind, type Frame } from '../protocol'
+
 export interface GpsFix {
   t: number
   speed: number
@@ -6,6 +8,15 @@ export interface GpsFix {
 }
 
 const EARTH_RADIUS_M = 6371000
+
+export const GOOD_ACCURACY_M = 20
+
+export function gpsFrames(fix: GpsFix): Frame[] {
+  return [
+    { t: fix.t, kind: FrameKind.GpsSpeed, value: fix.speed },
+    { t: fix.t, kind: FrameKind.GpsAccuracy, value: fix.accuracy }
+  ]
+}
 
 export class Gps {
   onFix: ((fix: GpsFix) => void) | null = null

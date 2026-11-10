@@ -1,15 +1,13 @@
 import asyncio, hmac
 from typing import Annotated
 from fastapi import APIRouter, Path, WebSocket
+from common.protocol.close_codes import CloseCode
 from relay.settings import settings
 from relay.src.rooms import Role, rooms
 from relay.src.schemas.messages import MessageHello
 
 
 router = APIRouter()
-
-CLOSE_UNAUTHORIZED = 4401
-CLOSE_FULL = 4429
 
 Code = Annotated[str, Path(pattern=r'^[A-Z0-9]{4,8}$')]
 
@@ -32,13 +30,13 @@ async def serve(peer: WebSocket, code: str, role: Role) -> None:
     await peer.accept()
 
     if not await authenticate(peer):
-        await peer.close(code=CLOSE_UNAUTHORIZED)
+        await peer.close(code=CloseCode.UNAUTHORIZED)
         return
 
     room = await rooms.join(code, role, peer)
 
     if room is None:
-        await peer.close(code=CLOSE_FULL)
+        await peer.close(code=CloseCode.FULL)
         return
 
     try:

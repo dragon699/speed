@@ -2,22 +2,19 @@
   import { onDestroy } from 'svelte'
   import { slide } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
-  import StatusList from '../components/StatusList.svelte'
+  import StatusBoard from '../components/StatusBoard.svelte'
   import Toggle from '../components/Toggle.svelte'
   import { detectPhoneName, isValidCode, loadCode, loadKey, loadPhoneName, saveCode, savePhoneName } from '../lib/device'
+  import { loadMount, saveMount, SpeedFusion, type FusionStatus } from '../lib/fusion/fusion'
+  import { phoneStatus, type FusedView } from '../lib/phoneStatus'
+  import { ScreenWakeLock, watchCharging } from '../lib/power.svelte'
+  import { PeerLink } from '../lib/peer.svelte'
   import { FrameKind, type Frame } from '../lib/protocol'
   import { Rate } from '../lib/rate.svelte'
   import { Relay } from '../lib/relay.svelte'
-  import { Gps, type GpsFix } from '../lib/sensors/gps'
-  import { Motion, magnitude, type MotionSample } from '../lib/sensors/motion'
-  import type { StatusItem } from '../lib/status'
+  import { Gps, gpsFrames, type GpsFix } from '../lib/sensors/gps'
+  import { Motion, motionFrames, type MotionSample } from '../lib/sensors/motion'
 
-  interface BatteryManager extends EventTarget {
-    charging: boolean
-    onchargingchange: (() => void) | null
-  }
-
-  const GOOD_ACCURACY_M = 20
   const MOTION_TIMEOUT_MS = 2000
   const REFRESH_MS = 500
 
@@ -25,6 +22,8 @@
   const gps = new Gps()
   const gpsRate = new Rate()
   const motion = new Motion()
+  const wakeLock = new ScreenWakeLock()
+  const link = new PeerLink('phone', (data) => relay?.sendControl({ type: 'signal', data }))
 
   const storedName = loadPhoneName()
 
@@ -34,24 +33,45 @@
   let fix = $state<GpsFix | null>(null)
   let gpsError = $state<string | null>(null)
   let charging = $state<boolean | null>(null)
-  let screenLocked = $state(false)
   let motionHz = $state(0)
   let motionView = $state<MotionSample | null>(null)
   let motionUnavailable = $state(false)
+  let fusionStatus = $state<FusionStatus | null>(null)
+  let fusedView = $state<FusedView | null>(null)
   let recordWanted = $state(false)
   let recordingSince = $state<number | null>(null)
   let recordedBytes = $state(0)
   let clock = $state(Date.now())
 
-  let wakeLock: WakeLockSentinel | null = null
   let refreshTimer = 0
   let motionStartedAt = 0
   let motionSamples = 0
   let lastSample: MotionSample | null = null
+  let fusion: SpeedFusion | null = null
   let sentBytes = 0
 
   const recording = $derived(!!relay?.state.recording)
-  const statusItems = $derived(getStatusItems())
+  const statusSections = $derived(
+    phoneStatus({
+      hasKey: !!key,
+      relay: relay?.state ?? null,
+      charging,
+      fix,
+      gpsError,
+      gpsHz: gpsRate.hz,
+      motionHz,
+      motionUnavailable,
+      motion: motionView,
+      fusion: fusionStatus,
+      fused: fusedView,
+      link: { state: link.state, route: link.route },
+      recordWanted,
+      recording,
+      recordingMs: recordingSince === null ? null : clock - recordingSince,
+      recordedBytes,
+      screenLocked: wakeLock.held
+    })
+  )
 
   if (!storedName) detectPhoneName().then((detected) => (name ||= detected))
 
@@ -59,10 +79,12 @@
     fix = next
     gpsError = null
     gpsRate.tick()
-    send([
-      { t: next.t, kind: FrameKind.GpsSpeed, value: next.speed },
-      { t: next.t, kind: FrameKind.GpsAccuracy, value: next.accuracy }
-    ])
+    const offset = relay?.clockOffsetMs ?? null
+    const frames = gpsFrames(next)
+    if (offset !== null) frames.push({ t: next.t, kind: FrameKind.ClockOffset, value: offset })
+
+    send(frames)
+    fusion?.addFix(next)
   }
 
   gps.onError = (message) => (gpsError = message)
@@ -71,8 +93,17 @@
     motionSamples++
     lastSample = sample
 
-    if (recording) send(toFrames(sample))
+    const fused = fusion?.addMotion(sample) ?? []
+    const frames = recording ? [...motionFrames(sample), ...fused] : fused
+
+    link.send(fused)
+    if (frames.length) send(frames)
   }
+
+  $effect(() => {
+    if (relay?.state.connected && relay.state.car) link.start()
+    else link.stop()
+  })
 
   $effect(() => {
     if (recording && recordingSince === null) {
@@ -89,18 +120,6 @@
     if (recording) sentBytes += bytes
   }
 
-  function toFrames(sample: MotionSample): Frame[] {
-    const frames: Frame[] = []
-    const add = (kinds: FrameKind[], vector: number[] | null) =>
-      vector?.forEach((value, index) => frames.push({ t: sample.t, kind: kinds[index], value }))
-
-    add([FrameKind.AccelX, FrameKind.AccelY, FrameKind.AccelZ], sample.accel)
-    add([FrameKind.LinearAccelX, FrameKind.LinearAccelY, FrameKind.LinearAccelZ], sample.linear)
-    add([FrameKind.RotationAlpha, FrameKind.RotationBeta, FrameKind.RotationGamma], sample.rotation)
-
-    return frames
-  }
-
   function refresh() {
     clock = Date.now()
     motionHz = Math.round((motionSamples * 1000) / REFRESH_MS)
@@ -108,77 +127,11 @@
     motionView = lastSample
     motionUnavailable = !lastSample && performance.now() - motionStartedAt > MOTION_TIMEOUT_MS
     recordedBytes = sentBytes
-  }
+    fusionStatus = fusion?.status ?? null
+    fusedView = fusion && fusionStatus?.calibrated ? { speed: fusion.speed, accel: fusion.accel, lagMs: fusion.filter.lagMs } : null
 
-  function getStatusItems(): StatusItem[] {
-    if (!key) return [{ icon: 'server', label: 'Server', value: 'No device key – open the setup link', tone: 'bad' }]
-
-    const carConnected = !!relay?.state.connected && relay.state.car
-
-    return [
-      getServerItem(),
-      carConnected
-        ? { icon: 'car', label: 'Car', value: 'Connected', tone: 'ok' }
-        : { icon: 'car', label: 'Car', value: 'Not connected', tone: 'bad' },
-      charging === null
-        ? { icon: 'charger', label: 'Charger', value: '—', tone: 'idle' }
-        : charging
-          ? { icon: 'charger', label: 'Charger', value: 'Charging', tone: 'ok' }
-          : { icon: 'charger', label: 'Charger', value: 'Not charging', tone: 'warn' },
-      getGpsItem(),
-      getMotionItem(),
-      getRecordingItem(),
-      !relay
-        ? { icon: 'screen', label: 'Screen', value: '—', tone: 'idle' }
-        : screenLocked
-          ? { icon: 'screen', label: 'Screen', value: 'Kept awake', tone: 'ok' }
-          : { icon: 'screen', label: 'Screen', value: 'May sleep', tone: 'warn' }
-    ]
-  }
-
-  function getServerItem(): StatusItem {
-    if (!relay) return { icon: 'server', label: 'Server', value: 'Enter the car code', tone: 'idle' }
-    if (relay.state.error) return { icon: 'server', label: 'Server', value: relay.state.error, tone: 'bad' }
-    if (!relay.state.connected) return { icon: 'server', label: 'Server', value: 'Connecting…', tone: 'wait' }
-    return { icon: 'server', label: 'Server', value: 'Connected', tone: 'ok' }
-  }
-
-  function getGpsItem(): StatusItem {
-    if (gpsError) return { icon: 'gps', label: 'GPS', value: gpsError, tone: 'bad' }
-    if (!fix) return { icon: 'gps', label: 'GPS', value: relay ? 'Waiting for fix' : '—', tone: relay ? 'wait' : 'idle' }
-
-    const value = `±${fix.accuracy.toFixed(0)} m · ${gpsRate.hz.toFixed(1)} Hz`
-    return { icon: 'gps', label: 'GPS', value, tone: fix.accuracy <= GOOD_ACCURACY_M ? 'ok' : 'warn' }
-  }
-
-  function getMotionItem(): StatusItem {
-    if (!relay) return { icon: 'motion', label: 'Motion', value: '—', tone: 'idle' }
-    if (motionUnavailable) return { icon: 'motion', label: 'Motion', value: 'Unavailable', tone: 'bad' }
-    if (!motionHz) return { icon: 'motion', label: 'Motion', value: 'Waiting', tone: 'wait' }
-    return { icon: 'motion', label: 'Motion', value: `${motionHz} Hz`, tone: 'ok' }
-  }
-
-  function getRecordingItem(): StatusItem {
-    if (!recordWanted) return { icon: 'record', label: 'Recording', value: 'Off', tone: 'idle' }
-    if (!recording || recordingSince === null) return { icon: 'record', label: 'Recording', value: 'Starting…', tone: 'wait' }
-
-    const value = `${formatDuration(clock - recordingSince)} · ${formatBytes(recordedBytes)}`
-    return { icon: 'record', label: 'Recording', value, tone: 'ok' }
-  }
-
-  function formatBytes(bytes: number): string {
-    return bytes < 1e6 ? `${Math.round(bytes / 1e3)} kB` : `${(bytes / 1e6).toFixed(1)} MB`
-  }
-
-  function formatDuration(ms: number): string {
-    const seconds = Math.max(0, Math.floor(ms / 1000))
-    const minutes = Math.floor(seconds / 60)
-    return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
-  }
-
-  function formatVector(vector: number[] | null | undefined, unit: string): string {
-    if (!vector) return '—'
-    return `${magnitude(vector as [number, number, number]).toFixed(2)} ${unit}`
+    const snapshot = fusion?.mount.snapshot()
+    if (snapshot) saveMount(snapshot)
   }
 
   async function start() {
@@ -189,19 +142,24 @@
     saveCode(code)
     savePhoneName(name)
     relay = new Relay('phone', code, key)
+    relay.onSignal = (signal) => link.handleSignal(signal)
     relay.onOpen = () => {
       reportPhone()
       if (recordWanted) reportRecording()
     }
     relay.start()
+    fusion = new SpeedFusion(loadMount())
     gps.start()
 
     motionStartedAt = performance.now()
     motionUnavailable = !(await motion.start())
     refreshTimer = window.setInterval(refresh, REFRESH_MS)
 
-    await watchBattery()
-    await lockScreen()
+    await watchCharging((value) => {
+      charging = value
+      reportPhone()
+    })
+    await wakeLock.acquire()
   }
 
   async function stop() {
@@ -213,32 +171,16 @@
     clearInterval(refreshTimer)
     motion.stop()
     gps.stop()
+    link.stop()
     relay?.stop()
     relay = null
     lastSample = null
+    fusion = null
+    fusionStatus = null
+    fusedView = null
     motionView = null
     motionHz = 0
-    await wakeLock?.release()
-    wakeLock = null
-    screenLocked = false
-  }
-
-  async function watchBattery() {
-    const nav = navigator as Navigator & { getBattery?: () => Promise<BatteryManager> }
-
-    if (!nav.getBattery) {
-      charging = true
-      reportPhone()
-      return
-    }
-
-    const battery = await nav.getBattery()
-    charging = battery.charging
-    battery.onchargingchange = () => {
-      charging = battery.charging
-      reportPhone()
-    }
-    reportPhone()
+    await wakeLock.release()
   }
 
   function reportPhone() {
@@ -249,18 +191,8 @@
     relay?.sendControl({ type: 'record', on: recordWanted })
   }
 
-  async function lockScreen() {
-    try {
-      wakeLock = await navigator.wakeLock.request('screen')
-      screenLocked = true
-      wakeLock.onrelease = () => (screenLocked = false)
-    } catch {
-      screenLocked = false
-    }
-  }
-
   function handleVisibility() {
-    if (relay && document.visibilityState === 'visible') lockScreen()
+    if (relay && document.visibilityState === 'visible') wakeLock.acquire()
   }
 
   onDestroy(stop)
@@ -270,7 +202,7 @@
 
 <main class="page">
   <div class="reveal" style:--i="0">
-    <StatusList items={statusItems} />
+    <StatusBoard sections={statusSections} />
   </div>
 
   {#if key}
@@ -306,28 +238,6 @@
       {relay ? 'Stop' : 'Start'}
     </button>
 
-    <dl class="panel reveal" style:--i="2">
-      <dt>GPS speed</dt>
-      <dd>
-        {#if fix}
-          {(fix.speed * 3.6).toFixed(1)} km/h{fix.derived ? ' · derived' : ''}
-        {:else}
-          —
-        {/if}
-      </dd>
-
-      <dt>Accel</dt>
-      <dd>{formatVector(motionView?.accel, 'm/s²')}</dd>
-
-      <dt>Linear accel</dt>
-      <dd>{formatVector(motionView?.linear, 'm/s²')}</dd>
-
-      <dt>Rotation</dt>
-      <dd>{formatVector(motionView?.rotation, '°/s')}</dd>
-
-      <dt>Relay RTT</dt>
-      <dd>{relay?.state.rttMs == null ? '—' : `${relay.state.rttMs.toFixed(0)} ms`}</dd>
-    </dl>
   {/if}
 </main>
 

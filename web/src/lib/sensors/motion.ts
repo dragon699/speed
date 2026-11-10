@@ -1,3 +1,5 @@
+import { FrameKind, type Frame } from '../protocol'
+
 export type Vector = [number, number, number]
 
 export interface MotionSample {
@@ -48,8 +50,16 @@ export class Motion {
   }
 }
 
-export function magnitude(vector: Vector): number {
-  return Math.hypot(...vector)
+export function motionFrames(sample: MotionSample): Frame[] {
+  const frames: Frame[] = []
+  const add = (kinds: FrameKind[], vector: Vector | null) =>
+    vector?.forEach((value, index) => frames.push({ t: sample.t, kind: kinds[index], value }))
+
+  add([FrameKind.AccelX, FrameKind.AccelY, FrameKind.AccelZ], sample.accel)
+  add([FrameKind.LinearAccelX, FrameKind.LinearAccelY, FrameKind.LinearAccelZ], sample.linear)
+  add([FrameKind.RotationAlpha, FrameKind.RotationBeta, FrameKind.RotationGamma], sample.rotation)
+
+  return frames
 }
 
 function toVector(value: DeviceMotionEventAcceleration | null): Vector | null {

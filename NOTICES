@@ -1,0 +1,11 @@
+speed includes third-party code:
+
+1. web/src/lib/audio/core/ — engine sound DSP (src/dsp), shared contracts, engine definitions and voicings
+   (src/data/engines), tyre geometry (src/sim/tyre.ts) and their DSP unit tests, vendored from Tesbox 1.5.1
+   (https://github.com/Atvriders/tesbox, commit 5f89922). Licensed under the MIT License; the full text is in
+   web/src/lib/audio/core/LICENSE.
+
+   Copyright (c) 2026 Atvriders
+
+2. samples/stuntrally3/ (local only, gitignored) — engine-sim renders by CryHam (Stunt Rally 3), CC-BY-4.0,
+   used for offline spectral comparison.

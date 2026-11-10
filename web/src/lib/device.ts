@@ -1,7 +1,4 @@
-const KEY_STORAGE = 'speed.key'
-const CODE_STORAGE = 'speed.code'
-const FIRST_SEEN_STORAGE = 'speed.firstSeen'
-const PHONE_NAME_STORAGE = 'speed.phoneName'
+import { readStorage, writeStorage } from './storage'
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const CODE_LENGTH = 6
@@ -10,19 +7,19 @@ export function loadKey(): string | null {
   const key = new URLSearchParams(location.hash.slice(1)).get('key')
 
   if (key) {
-    localStorage.setItem(KEY_STORAGE, key)
+    writeStorage('key', key)
     history.replaceState(null, '', location.pathname)
   }
 
-  return localStorage.getItem(KEY_STORAGE)
+  return readStorage('key')
 }
 
 export function loadCode(): string | null {
-  return localStorage.getItem(CODE_STORAGE)
+  return readStorage('code')
 }
 
 export function saveCode(code: string) {
-  localStorage.setItem(CODE_STORAGE, code)
+  writeStorage('code', code)
 }
 
 export function createCode(): string {
@@ -35,17 +32,17 @@ export function isValidCode(code: string): boolean {
 }
 
 export function loadFirstSeen(): string {
-  const firstSeen = localStorage.getItem(FIRST_SEEN_STORAGE) ?? new Date().toISOString()
-  localStorage.setItem(FIRST_SEEN_STORAGE, firstSeen)
+  const firstSeen = readStorage('firstSeen') ?? new Date().toISOString()
+  writeStorage('firstSeen', firstSeen)
   return firstSeen
 }
 
 export function loadPhoneName(): string | null {
-  return localStorage.getItem(PHONE_NAME_STORAGE)
+  return readStorage('phoneName')
 }
 
 export function savePhoneName(name: string) {
-  localStorage.setItem(PHONE_NAME_STORAGE, name)
+  writeStorage('phoneName', name)
 }
 
 export async function detectPhoneName(): Promise<string> {

@@ -2,16 +2,16 @@ import asyncio, json, time
 from typing import Literal
 from fastapi import WebSocket
 from pydantic import ValidationError
+from common.protocol.close_codes import CloseCode
 from common.protocol.frames import Frame
 from relay.settings import settings
 from relay.src.recorder import Recorder
-from relay.src.schemas.messages import ControlMessage, MessagePing, MessagePhone, MessageRecord
+from relay.src.schemas.messages import ControlMessage, MessagePing, MessagePhone, MessageRecord, MessageSignal
 from relay.src.telemetry.logging import log
 
 
 Role = Literal['car', 'phone']
 
-CLOSE_REPLACED = 4409
 
 
 
@@ -118,7 +118,14 @@ class Room:
         await self.broadcast_status()
 
 
+    def get_other(self, role: Role) -> WebSocket | None:
+        return self.peers['phone' if role == 'car' else 'car']
+
+
     async def handle_control(self, role: Role, peer: WebSocket, text: str) -> None:
+        if len(text) > settings.max_control_bytes:
+            return
+
         try:
             message = ControlMessage.validate_json(text)
 
@@ -126,7 +133,10 @@ class Room:
             return
 
         if isinstance(message, MessagePing):
-            await self.send(peer, {'type': 'pong', 't': message.t})
+            await self.send(peer, {'type': 'pong', 't': message.t, 'server': time.time() * 1000})
+
+        elif isinstance(message, MessageSignal):
+            await self.send(self.get_other(role), {'type': 'signal', 'data': message.data})
 
         elif isinstance(message, MessageRecord) and role == 'phone':
             if message.on:
@@ -161,7 +171,7 @@ class Rooms:
 
         if replaced is not None:
             try:
-                await replaced.close(code=CLOSE_REPLACED)
+                await replaced.close(code=CloseCode.REPLACED)
 
             except Exception:
                 pass

@@ -1,10 +1,33 @@
 export type Tone = 'ok' | 'warn' | 'bad' | 'idle' | 'wait'
 
-export type IconName = 'server' | 'phone' | 'car' | 'charger' | 'gps' | 'sound' | 'screen' | 'motion' | 'record'
+export type IconName =
+  | 'server'
+  | 'phone'
+  | 'car'
+  | 'charger'
+  | 'gps'
+  | 'sound'
+  | 'screen'
+  | 'motion'
+  | 'record'
+  | 'play'
+  | 'pause'
+  | 'timer'
+  | 'link'
+  | 'display'
+  | 'clock'
+  | 'gauge'
 
-export interface StatusItem {
+export interface BulletItem {
+  key: string
   icon: IconName
-  label: string
-  value: string
+  text: string
+  detail?: string
   tone: Tone
+  active?: boolean
+}
+
+export interface BulletSection {
+  title: string
+  items: BulletItem[]
 }

@@ -12,12 +12,24 @@ export const FrameKind = {
   RotationAlpha: 10,
   RotationBeta: 11,
   RotationGamma: 12,
-  GpsAccuracy: 13
+  GpsAccuracy: 13,
+  ClockOffset: 14
 } as const
 
 export type FrameKind = (typeof FrameKind)[keyof typeof FrameKind]
 
 export const FRAME_SIZE = 13
+
+export const CloseCode = {
+  Unauthorized: 4401,
+  Replaced: 4409,
+  Full: 4429
+} as const
+
+export interface PeerSignal {
+  description?: RTCSessionDescriptionInit
+  candidate?: RTCIceCandidateInit | null
+}
 
 export interface Frame {
   t: number
@@ -30,6 +42,7 @@ export type ClientMessage =
   | { type: 'ping'; t: number }
   | { type: 'phone'; charging: boolean; name: string | null }
   | { type: 'record'; on: boolean }
+  | { type: 'signal'; data: PeerSignal }
 
 export type ServerMessage =
   | {
@@ -40,7 +53,8 @@ export type ServerMessage =
       phone_name: string | null
       recording: boolean
     }
-  | { type: 'pong'; t: number }
+  | { type: 'pong'; t: number; server: number }
+  | { type: 'signal'; data: PeerSignal }
 
 export function encodeFrames(frames: Frame[]): ArrayBuffer {
   const buffer = new ArrayBuffer(frames.length * FRAME_SIZE)

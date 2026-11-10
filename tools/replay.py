@@ -70,6 +70,10 @@ def main() -> None:
         fused = fuse(linear.t, forward_accel, gps_t, gps_speed, q, args.r_gps, args.r_acc)
         speed_axis.plot(linear.t, fused * 3.6, linewidth=1, label=f'KF q={q}')
 
+    if len(recording.fused_speed):
+        speed_axis.plot(recording.fused_speed.t, recording.fused_speed.values * 3.6, linewidth=1.5, color='tab:red', label='live fused (phone)')
+        accel_axis.plot(recording.fused_accel.t, recording.fused_accel.values, linewidth=1, color='tab:red', zorder=3)
+
     speed_axis.set_ylabel('km/h')
     speed_axis.legend()
     speed_axis.grid(alpha=0.3)

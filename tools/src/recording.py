@@ -31,6 +31,8 @@ class Recording:
     duration: float
     gps_speed: Series
     gps_accuracy: Series
+    fused_speed: Series
+    fused_accel: Series
     accel: Series
     linear: Series
     rotation: Series
@@ -65,6 +67,8 @@ class RecordingLoader:
             duration=float(duration),
             gps_speed=scalar(FrameKind.GPS_SPEED),
             gps_accuracy=scalar(FrameKind.GPS_ACCURACY),
+            fused_speed=scalar(FrameKind.FUSED_SPEED),
+            fused_accel=scalar(FrameKind.FUSED_ACCEL),
             accel=vector((FrameKind.ACCEL_X, FrameKind.ACCEL_Y, FrameKind.ACCEL_Z)),
             linear=vector((FrameKind.LINEAR_ACCEL_X, FrameKind.LINEAR_ACCEL_Y, FrameKind.LINEAR_ACCEL_Z)),
             rotation=vector((FrameKind.ROTATION_ALPHA, FrameKind.ROTATION_BETA, FrameKind.ROTATION_GAMMA))

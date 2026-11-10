@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     hello_timeout_seconds: float = Field(default=5, gt=0)
     max_rooms: int = Field(default=4, gt=0)
     max_messages_per_second: int = Field(default=200, gt=0)
+    max_control_bytes: int = Field(default=16_384, gt=0)
 
     recordings_dir: str = '/data'
     max_recording_bytes: int = Field(default=200_000_000, gt=0)

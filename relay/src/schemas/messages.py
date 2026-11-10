@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, TypeAdapter
 
 
@@ -24,6 +24,11 @@ class MessageRecord(BaseModel):
     on: bool
 
 
+class MessageSignal(BaseModel):
+    type: Literal['signal']
+    data: dict[str, Any]
+
+
 ControlMessage = TypeAdapter(
-    Annotated[MessagePing | MessagePhone | MessageRecord, Field(discriminator='type')]
+    Annotated[MessagePing | MessagePhone | MessageRecord | MessageSignal, Field(discriminator='type')]
 )

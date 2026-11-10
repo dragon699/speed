@@ -44,5 +44,26 @@
   {:else if name === 'screen'}
     <rect x="5" y="11" width="14" height="10" rx="2" />
     <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  {:else if name === 'play'}
+    <path d="M7 4.5v15l12-7.5-12-7.5Z" fill="currentColor" />
+  {:else if name === 'pause'}
+    <rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" />
+    <rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" />
+  {:else if name === 'timer'}
+    <circle cx="12" cy="13" r="8" />
+    <path d="M12 9v4l2.5 2.5M9.5 2h5" />
+  {:else if name === 'link'}
+    <path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4L11.6 6" />
+    <path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.6-1.6" />
+  {:else if name === 'display'}
+    <rect x="2.5" y="4" width="19" height="13" rx="2" />
+    <path d="M8 21h8M12 17v4" />
+  {:else if name === 'clock'}
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  {:else if name === 'gauge'}
+    <path d="M4.5 18a9 9 0 1 1 15 0" />
+    <path d="m12 13 4-5" />
+    <circle cx="12" cy="13" r="1.2" fill="currentColor" />
   {/if}
 </svg>

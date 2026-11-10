@@ -224,29 +224,6 @@ input[type='range']:active::-moz-range-thumb {
   animation-delay: calc(var(--i, 0) * 80ms);
 }
 
-.panel {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 8px 24px;
-  margin: 0;
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
-}
-
-.panel dt {
-  color: var(--muted);
-}
-
-.panel dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
-}
-
 @keyframes reveal {
   from {
     opacity: 0;
