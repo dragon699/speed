@@ -130,7 +130,7 @@ drivetrain (rpm, signed load, gear, limiter) to its per-block control and turns 
 trajectories. The 15 engine definitions (real ratios, tyres, shift times, voicings) come from Tesbox; their DSP
 tests run with ours.
 
-The car page has two engine tabs: **Classic** (our original procedural synth in `web/src/lib/audio/classic/`, 10 engines,
+The car page has two engine tabs: **Custom** (our original procedural synth in `web/src/lib/audio/classic/`, 10 engines,
 unchanged since before the port) and **DSP** (the engine above, 15 engines). Both worklets load into one
 AudioContext and only the selected one is connected, so switching tabs swaps the sound instantly.
 

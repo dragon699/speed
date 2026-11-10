@@ -21,11 +21,12 @@
     align-items: center;
     justify-content: space-between;
     min-height: 64px;
-    padding: 0 20px;
+    padding: 0 12px 0 28px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-control);
     background: var(--surface);
-    font-size: 1.2rem;
+    font-size: 1.15rem;
+    letter-spacing: var(--tracking-control);
     cursor: pointer;
     user-select: none;
     transition:
@@ -52,7 +53,7 @@
     position: relative;
     width: 56px;
     height: 32px;
-    border-radius: 999px;
+    border-radius: var(--radius-control);
     background: var(--track);
     transition: background-color var(--duration) var(--ease);
   }
@@ -63,7 +64,7 @@
     left: 4px;
     width: 24px;
     height: 24px;
-    border-radius: 50%;
+    border-radius: calc(var(--radius-control) - 2px);
     background: var(--thumb);
     box-shadow: 0 2px 6px rgb(0 0 0 / 0.3);
     transition: transform var(--duration) var(--ease);

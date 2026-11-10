@@ -7,6 +7,7 @@ import { signedLoad, type EngineSettings } from './control'
 import type { EngineEvent, EngineMessage } from './messages'
 import { MAX_SAMPLE_RATE } from './core/contracts'
 import { MIN_SAMPLE_RATE } from './core/dsp/dsp-core'
+import { CLIP_HEADROOM, softClipCurve } from './softClip'
 
 const GLIDE_SECONDS = 0.05
 const CLASSIC_UPSHIFT_CUT_MS = 80
@@ -36,9 +37,14 @@ export class EngineSound {
       if (event.data.type === 'error') this.onError?.(event.data.message)
     }
     this.classic = new AudioWorkletNode(context, 'classic-engine', NODE_OPTIONS)
+    const limiter = context.createWaveShaper()
+    limiter.curve = softClipCurve()
+    limiter.oversample = '2x'
+    limiter.connect(context.destination)
+
     this.volume = context.createGain()
-    this.volume.gain.value = volume
-    this.volume.connect(context.destination)
+    this.volume.gain.value = outputGain(volume)
+    this.volume.connect(limiter)
     this.context = context
 
     this.setProfile(profile)
@@ -88,7 +94,7 @@ export class EngineSound {
 
   setVolume(volume: number) {
     if (!this.volume || !this.context) return
-    this.volume.gain.setTargetAtTime(volume, this.context.currentTime, GLIDE_SECONDS)
+    this.volume.gain.setTargetAtTime(outputGain(volume), this.context.currentTime, GLIDE_SECONDS)
   }
 
   async stop() {
@@ -121,6 +127,10 @@ export class EngineSound {
   private postClassic(message: SynthMessage) {
     this.classic?.port.postMessage(message)
   }
+}
+
+function outputGain(volume: number): number {
+  return volume / CLIP_HEADROOM
 }
 
 function createContext(): AudioContext {

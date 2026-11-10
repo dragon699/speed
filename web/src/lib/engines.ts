@@ -137,7 +137,7 @@ export function toClassicProfile(engine: ClassicEngine): EngineProfile {
 }
 
 export const engineSets: EngineSet[] = [
-  { id: 'classic', label: 'Classic', engines: (classicJson as unknown as ClassicEngine[]).map(toClassicProfile) },
+  { id: 'classic', label: 'Custom', engines: (classicJson as unknown as ClassicEngine[]).map(toClassicProfile) },
   { id: 'core', label: 'DSP', engines: ENGINES.map(toEngineProfile) }
 ]
 

@@ -137,13 +137,13 @@
 
   .name {
     font-size: 1.15rem;
-    font-weight: 600;
+    font-weight: var(--weight-medium);
   }
 
   .spec {
     color: var(--engine);
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--weight-regular);
   }
 
   .inspired {

@@ -48,7 +48,7 @@
     margin: 0 0 12px;
     color: var(--muted);
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: var(--weight-medium);
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
@@ -89,7 +89,7 @@
     gap: 8px;
     color: var(--tone);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--weight-regular);
     transition: color var(--duration) var(--ease);
   }
 
@@ -104,10 +104,10 @@
   .active {
     padding: 1px 7px;
     border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-control);
     color: var(--tone);
     font-size: 0.68rem;
-    font-weight: 600;
+    font-weight: var(--weight-medium);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }

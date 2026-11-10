@@ -32,7 +32,7 @@
     grid-template-columns: repeat(var(--count), 1fr);
     padding: 4px;
     border: 1px solid var(--border);
-    border-radius: calc(var(--radius) + 4px);
+    border-radius: var(--radius-control);
     background: var(--surface);
   }
 
@@ -42,7 +42,7 @@
     bottom: 4px;
     left: 4px;
     width: calc((100% - 8px) / var(--count));
-    border-radius: var(--radius);
+    border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--accent) 18%, var(--bg));
     border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
     transform: translateX(calc(var(--index) * 100%));
@@ -69,7 +69,7 @@
   }
 
   .label {
-    font-weight: 600;
+    font-weight: var(--weight-medium);
   }
 
   .hint {

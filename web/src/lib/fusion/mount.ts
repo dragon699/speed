@@ -16,6 +16,7 @@ const HISTORY_S = 5
 const MEMORY_EXCITATION = 40
 const MIN_EXCITATION = 6
 const MIN_CORRELATION = 0.8
+const MIN_KEEP_CORRELATION = 0.6
 const VERIFY_EXCITATION = 1.5
 const MIN_RESTORED_CORRELATION = 0.5
 
@@ -42,6 +43,7 @@ export class MountEstimator {
   private movedSince: number | null = null
   private saved: MountSnapshot | null = null
   private restored = false
+  private locked = false
   private lastT: number | null = null
   private lastFix: GpsFix | null = null
   private history: Sample[] = []
@@ -57,7 +59,7 @@ export class MountEstimator {
   get calibrated(): boolean {
     if (!this.forward) return false
     if (this.restored) return this.excitation < VERIFY_EXCITATION || this.correlationAlong(this.forward) >= MIN_RESTORED_CORRELATION
-    return this.excitation >= MIN_EXCITATION && this.correlationAlong(this.forward) >= MIN_CORRELATION
+    return this.locked
   }
 
   restore(snapshot: MountSnapshot | null) {
@@ -155,6 +157,7 @@ export class MountEstimator {
     this.movedSince = null
     this.forward = null
     this.restored = false
+    this.locked = false
     this.history = []
     this.correlation = ZERO
     this.moment = [0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -183,6 +186,7 @@ export class MountEstimator {
 
     this.forward = learned
     this.restored = false
+    this.locked = this.correlationAlong(learned) >= (this.locked ? MIN_KEEP_CORRELATION : MIN_CORRELATION)
   }
 
   private correlationAlong(axis: Vec3): number {

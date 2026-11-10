@@ -63,6 +63,7 @@
     gap: 10px;
     margin: 0;
     font-size: 1.25rem;
+    font-weight: var(--weight-medium);
   }
 
   p {
@@ -72,7 +73,7 @@
 
   strong {
     color: var(--text);
-    font-weight: 500;
+    font-weight: var(--weight-medium);
   }
 
   .code {

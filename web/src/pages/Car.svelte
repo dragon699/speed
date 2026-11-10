@@ -3,6 +3,8 @@
   import { cubicOut } from 'svelte/easing'
   import { Tween } from 'svelte/motion'
   import { fade, slide } from 'svelte/transition'
+  import { screenSlide } from '../lib/screenSlide'
+  import DriveView from '../components/DriveView.svelte'
   import EnginePicker from '../components/EnginePicker.svelte'
   import PairingCard from '../components/PairingCard.svelte'
   import Slider from '../components/Slider.svelte'
@@ -22,6 +24,7 @@
   import { Relay } from '../lib/relay.svelte'
   import { Gps, type GpsFix } from '../lib/sensors/gps'
   import { fromKmh, toKmh } from '../lib/units'
+  import { MAX_VOLUME, UNITY_VOLUME } from '../lib/volume'
 
   const PHONE_STALE_MS = 2000
   const FUSED_STALE_MS = 500
@@ -257,74 +260,96 @@
 <svelte:window bind:innerWidth bind:innerHeight />
 
 <main class="page">
-  <section class="hero reveal" style:--i="0" style:--engine={engineProfile.color}>
-    <div class="speed">{displayKmh.current.toFixed(0)}<span>km/h</span></div>
-    <div class="drive">
-      <div class="gear"><span>Gear</span>{gear}</div>
-      <div class="rpm">{Math.round(rpm).toLocaleString('en-US')}<span>rpm</span></div>
-    </div>
-    <div class="side">
-      {#key engineProfile.id}
-        <div class="engine" in:fade={{ duration: 250 }}>{engineProfile.name}</div>
-      {/key}
-    </div>
-    <div class="tach">
-      <div class="tach-fill" style:width="{(rpm / engineProfile.redline) * 100}%"></div>
-      <div class="tach-redline" style:width="{(1 - 0.9) * 100}%"></div>
-    </div>
-  </section>
+  {#if started}
+    <DriveView
+      kmh={displayKmh.current}
+      manual={manualEnabled}
+      bind:manualKmh
+      manualMaxKmh={MANUAL_MAX_KMH}
+      bind:volume
+      profiles={engineSet(engineProfile.set).engines}
+      selected={engineProfile}
+      onselect={selectEngine}
+      onstop={stop}
+    />
+  {:else}
+    <div class="content" transition:screenSlide={-1}>
+      <section class="hero reveal" style:--i="0" style:--engine={engineProfile.color}>
+        <div class="speed">{displayKmh.current.toFixed(0)}<span>km/h</span></div>
+        <div class="drive">
+          <div class="gear"><span>Gear</span>{gear}</div>
+          <div class="rpm">{Math.round(rpm).toLocaleString('en-US')}<span>rpm</span></div>
+        </div>
+        <div class="side">
+          {#key engineProfile.id}
+            <div class="engine" in:fade={{ duration: 250 }}>{engineProfile.name}</div>
+          {/key}
+        </div>
+        <div class="tach">
+          <div class="tach-fill" style:width="{(rpm / engineProfile.redline) * 100}%"></div>
+          <div class="tach-redline" style:width="{(1 - 0.9) * 100}%"></div>
+        </div>
+      </section>
 
-  {#if !relay.state.phone}
-    <div transition:slide={{ duration: 350 }}>
-      <PairingCard {code} />
+      {#if !relay.state.phone}
+        <div transition:slide={{ duration: 350 }}>
+          <PairingCard {code} />
+        </div>
+      {/if}
+
+      <section class="engines reveal" style:--i="1">
+        <Tabs
+          options={engineSets.map((set) => ({ id: set.id, label: set.label, hint: `${set.engines.length} engines` }))}
+          value={engineProfile.set}
+          onchange={selectSet}
+        />
+        <EnginePicker profiles={engineSet(engineProfile.set).engines} selected={engineProfile} onselect={selectEngine} />
+      </section>
+
+      <section class="controls reveal" style:--i="2">
+        <button class:primary={!started} onclick={started ? stop : start}>{started ? 'Stop' : 'Start'}</button>
+        <button
+          class="rev"
+          class:held={revHeld}
+          disabled={!started || moving}
+          onpointerdown={() => rev(true)}
+          onpointerup={() => rev(false)}
+          onpointerleave={() => rev(false)}
+          onpointercancel={() => rev(false)}
+          oncontextmenu={(event) => event.preventDefault()}
+        >
+          <strong>REV</strong>
+          <span>hold while stopped</span>
+        </button>
+        <Slider label="Volume" bind:value={volume} max={MAX_VOLUME} unity={UNITY_VOLUME} />
+      </section>
+
+      <section class="test reveal" style:--i="3">
+        <Toggle label="Manual speed (test)" bind:checked={manualEnabled} onchange={startTestDrive} />
+        <Slider
+          label="Target speed"
+          bind:value={manualKmh}
+          min={0}
+          max={MANUAL_MAX_KMH}
+          step={1}
+          format={(value) => `${value} km/h`}
+        />
+      </section>
+
+      <div class="reveal" style:--i="4">
+        <StatusBoard sections={statusSections} />
+      </div>
     </div>
   {/if}
-
-  <section class="engines reveal" style:--i="1">
-    <Tabs
-      options={engineSets.map((set) => ({ id: set.id, label: set.label, hint: `${set.engines.length} engines` }))}
-      value={engineProfile.set}
-      onchange={selectSet}
-    />
-    <EnginePicker profiles={engineSet(engineProfile.set).engines} selected={engineProfile} onselect={selectEngine} />
-  </section>
-
-  <section class="controls reveal" style:--i="2">
-    <button class:primary={!started} onclick={started ? stop : start}>{started ? 'Stop' : 'Start'}</button>
-    <button
-      class="rev"
-      class:held={revHeld}
-      disabled={!started || moving}
-      onpointerdown={() => rev(true)}
-      onpointerup={() => rev(false)}
-      onpointerleave={() => rev(false)}
-      onpointercancel={() => rev(false)}
-      oncontextmenu={(event) => event.preventDefault()}
-    >
-      <strong>REV</strong>
-      <span>hold while stopped</span>
-    </button>
-    <Slider label="Volume" bind:value={volume} />
-  </section>
-
-  <section class="test reveal" style:--i="3">
-    <Toggle label="Manual speed (test)" bind:checked={manualEnabled} onchange={startTestDrive} />
-    <Slider
-      label="Target speed"
-      bind:value={manualKmh}
-      min={0}
-      max={MANUAL_MAX_KMH}
-      step={1}
-      format={(value) => `${value} km/h`}
-    />
-  </section>
-
-  <div class="reveal" style:--i="4">
-    <StatusBoard sections={statusSections} />
-  </div>
 </main>
 
 <style>
+  .content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
   .hero {
     display: grid;
     grid-template-columns: auto 1fr auto;
@@ -344,7 +369,7 @@
     flex-direction: column;
     color: var(--engine);
     font-size: 3.2rem;
-    font-weight: 700;
+    font-weight: var(--weight-light);
     line-height: 1;
     transition: color var(--duration) var(--ease);
   }
@@ -353,7 +378,7 @@
   .rpm span {
     color: var(--muted);
     font-size: 0.9rem;
-    font-weight: 400;
+    font-weight: var(--weight-regular);
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
@@ -371,14 +396,14 @@
     position: relative;
     grid-column: 1 / -1;
     height: 8px;
-    border-radius: 999px;
+    border-radius: var(--radius-control);
     background: var(--track);
     overflow: hidden;
   }
 
   .tach-fill {
     height: 100%;
-    border-radius: 999px;
+    border-radius: var(--radius-control);
     background: linear-gradient(to right, color-mix(in srgb, var(--engine) 55%, transparent), var(--engine));
     box-shadow: 0 0 14px color-mix(in srgb, var(--engine) 60%, transparent);
   }
@@ -407,7 +432,8 @@
   }
 
   .rev strong {
-    font-size: 1.3rem;
+    font-size: 1.15rem;
+    font-weight: var(--weight-medium);
     letter-spacing: 0.12em;
   }
 
@@ -440,7 +466,7 @@
 
   .speed {
     font-size: 7rem;
-    font-weight: 700;
+    font-weight: var(--weight-light);
     line-height: 1;
     font-variant-numeric: tabular-nums;
   }
@@ -448,7 +474,7 @@
   .speed span {
     margin-left: 12px;
     font-size: 1.5rem;
-    font-weight: 400;
+    font-weight: var(--weight-regular);
     color: var(--muted);
   }
 
@@ -464,7 +490,7 @@
   .engine {
     color: var(--engine);
     font-size: 1.6rem;
-    font-weight: 600;
+    font-weight: var(--weight-medium);
   }
 
   .controls {
