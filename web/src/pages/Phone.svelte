@@ -28,6 +28,8 @@
 
   const MOTION_TIMEOUT_MS = 2000
   const REFRESH_MS = 500
+  const NO_MOTION = -1
+  const LEARNING_CAP = 0.99
 
   const key = loadKey()
   const linkedCode = takeLinkedCode()
@@ -92,7 +94,7 @@
   }
 
   onMount(() => {
-    if (linkedCode) void start()
+    if (linkedCode) void connectTo(linkedCode)
   })
 
   gps.onFix = (next) => {
@@ -105,6 +107,7 @@
 
     send(frames)
     fusion?.addFix(next)
+    if (fusion) send([{ t: next.t, kind: FrameKind.FusionProgress, value: fusionProgress(fusion) }])
   }
 
   gps.onError = (message) => (gpsError = message)
@@ -183,9 +186,28 @@
     await wakeLock.acquire()
   }
 
+  function fusionProgress(current: SpeedFusion): number {
+    if (motionUnavailable) return NO_MOTION
+    const { calibrated, progress } = current.status
+    return calibrated ? 1 : Math.min(progress, LEARNING_CAP)
+  }
+
   async function enableMotion() {
     motionStartedAt = performance.now()
     motionUnavailable = !(await motion.start())
+  }
+
+  async function connectTo(linked: string) {
+    if (relay && normalizeCode(code) === linked) return
+    if (relay) await stop()
+
+    code = formatCode(linked)
+    await start()
+  }
+
+  function handleHashChange() {
+    const linked = takeLinkedCode()
+    if (linked) void connectTo(linked)
   }
 
   async function stop() {
@@ -225,6 +247,7 @@
 </script>
 
 <svelte:document onvisibilitychange={handleVisibility} />
+<svelte:window onhashchange={handleHashChange} />
 
 <main class="page">
   <div class="reveal" style:--i="0">

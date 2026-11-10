@@ -40,11 +40,14 @@ export class Motion {
 
   private handle(event: DeviceMotionEvent) {
     const rotation = event.rotationRate
+    const accel = toVector(event.accelerationIncludingGravity)
+    const linear = toVector(event.acceleration)
+    if (!accel && !linear) return
 
     this.onSample?.({
       t: performance.timeOrigin + event.timeStamp,
-      accel: toVector(event.accelerationIncludingGravity),
-      linear: toVector(event.acceleration),
+      accel,
+      linear,
       rotation:
         rotation && rotation.alpha !== null && rotation.beta !== null && rotation.gamma !== null
           ? [rotation.alpha, rotation.beta, rotation.gamma]

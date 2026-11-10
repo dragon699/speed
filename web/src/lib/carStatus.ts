@@ -8,6 +8,7 @@ import type { BulletItem, BulletSection, Tone } from './status'
 
 const GOOD_LATENCY_MS = 150
 const SLOW_LATENCY_MS = 400
+const LEARNING_SHOWN_MAX = 0.99
 
 export interface CarStatusInput {
   relay: RelayState
@@ -19,6 +20,7 @@ export interface CarStatusInput {
   phoneSeen: boolean
   phoneSpeed: number | null
   phoneHz: number
+  phoneMotion: number | null
   fusedSpeed: number | null
   fusedAccel: number
   fusedHz: number
@@ -157,7 +159,15 @@ function phoneItem(input: CarStatusInput, relay: RelayState): BulletItem {
   if (input.fusedLive && input.fusedSpeed !== null) {
     return { ...item, text: 'Sensors and GPS', detail: `${name} · ${formatSpeed(input.fusedSpeed)} · ${input.fusedAccel.toFixed(1)} m/s² · ${input.fusedHz.toFixed(0)} Hz`, tone: 'ok' }
   }
-  if (input.phoneLive && input.phoneSpeed !== null) return { ...item, text: 'GPS', detail: `${name} · ${formatSpeed(input.phoneSpeed)} · ${input.phoneHz.toFixed(1)} Hz`, tone: 'ok' }
+  if (input.phoneLive && input.phoneSpeed !== null) {
+    return { ...item, text: phoneGpsText(input.phoneMotion), detail: `${name} · ${formatSpeed(input.phoneSpeed)} · ${input.phoneHz.toFixed(1)} Hz`, tone: 'ok' }
+  }
   if (input.phoneSeen) return { ...item, text: 'Paused', detail: name, tone: 'warn' }
   return { ...item, text: 'Connected', detail: `${name} · waiting for GPS`, tone: 'wait' }
+}
+
+function phoneGpsText(motion: number | null): string {
+  if (motion === null) return 'GPS'
+  if (motion < 0) return 'GPS · no motion sensors'
+  return `GPS · sensors learning ${Math.round(Math.min(motion, LEARNING_SHOWN_MAX) * 100)}%`
 }

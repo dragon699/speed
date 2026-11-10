@@ -26,6 +26,7 @@ const car = (overrides: Partial<CarStatusInput> = {}): CarStatusInput => ({
   phoneSeen: true,
   phoneSpeed: 20,
   phoneHz: 1,
+  phoneMotion: null,
   fusedSpeed: null,
   fusedAccel: 0,
   fusedHz: 0,
@@ -96,6 +97,11 @@ describe('car status', () => {
   it('waits while stopped and before start', () => {
     expect(section(car({ moving: false }), 'Status').drive).toBe('Waiting (wait)')
     expect(section(car({ started: false }), 'Status').drive).toBe('Not started (idle)')
+  })
+
+  it('shows how far the phone is in learning its mount', () => {
+    expect(section(car({ phoneMotion: 0.4 }), 'Sensors').phone).toBe('GPS · sensors learning 40% (ok) [in use]')
+    expect(section(car({ phoneMotion: -1 }), 'Sensors').phone).toBe('GPS · no motion sensors (ok) [in use]')
   })
 
   it('says sensors and GPS when phone motion fusion is live', () => {

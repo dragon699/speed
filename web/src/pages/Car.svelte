@@ -76,6 +76,7 @@
   let lastFusedT = 0
   let lastSummaryAt = 0
   let phoneClockOffset: number | null = null
+  let phoneMotion = $state<number | null>(null)
 
   const phoneLive = $derived(phoneSpeed !== null && now - phoneFrameAt < PHONE_STALE_MS)
   const fusedLive = $derived(phoneLive && fusedSpeed !== null && now - fusedAt < FUSED_STALE_MS)
@@ -95,6 +96,7 @@
       phoneSeen: phoneSpeed !== null,
       phoneSpeed,
       phoneHz: phoneRate.hz,
+      phoneMotion,
       fusedSpeed,
       fusedAccel,
       fusedHz: fusedRate.hz,
@@ -125,6 +127,8 @@
         phoneRate.tick()
       } else if (frame.kind === FrameKind.ClockOffset) {
         phoneClockOffset = frame.value
+      } else if (frame.kind === FrameKind.FusionProgress) {
+        phoneMotion = frame.value
       } else if (frame.t > lastFusedT && frame.kind === FrameKind.FusedSpeed) {
         fusedSpeed = frame.value
         fusedAt = performance.now()

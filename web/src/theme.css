@@ -1,18 +1,21 @@
 :root,
 [data-theme='dark'] {
-  --bg: #0b0d10;
-  --surface: #151920;
-  --border: #252b35;
-  --text: #e8ebf0;
-  --muted: #8a93a3;
-  --accent: #e5484d;
-  --accent-text: #ffffff;
-  --ok: #3dd68c;
-  --warn: #f5a524;
-  --bad: #f2555a;
-  --track: #2a303b;
-  --thumb: #ffffff;
-  --shadow: 0 8px 30px rgb(0 0 0 / 0.35);
+  --hue: 6;
+  --saturation: 6%;
+  --lightness: 6%;
+  --bg: hsl(var(--hue) var(--saturation) var(--lightness));
+  --surface: hsl(var(--hue) var(--saturation) calc(var(--lightness) + 1%));
+  --border: hsl(var(--hue) var(--saturation) calc(var(--lightness) + 4%));
+  --track: hsl(var(--hue) var(--saturation) calc(var(--lightness) + 10%));
+  --text: hsl(var(--hue) var(--saturation) 85%);
+  --muted: hsl(var(--hue) var(--saturation) 52%);
+  --thumb: var(--text);
+  --accent: hsl(157 47% 65%);
+  --accent-text: var(--bg);
+  --ok: var(--accent);
+  --warn: hsl(43 50% 70%);
+  --bad: hsl(0 70% 70%);
+  --shadow: none;
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --radius: 14px;
@@ -23,19 +26,17 @@
 }
 
 [data-theme='light'] {
-  --bg: #f4f5f7;
-  --surface: #ffffff;
-  --border: #dde1e7;
-  --text: #11151a;
-  --muted: #5d6675;
-  --accent: #d93036;
-  --accent-text: #ffffff;
-  --ok: #1a9d5c;
-  --warn: #b7770d;
-  --bad: #d93036;
-  --track: #dde1e7;
-  --thumb: #ffffff;
-  --shadow: 0 8px 30px rgb(17 21 26 / 0.12);
+  --lightness: 95%;
+  --surface: hsl(var(--hue) var(--saturation) 99%);
+  --border: hsl(var(--hue) var(--saturation) 86%);
+  --track: hsl(var(--hue) var(--saturation) 82%);
+  --text: hsl(var(--hue) var(--saturation) 12%);
+  --muted: hsl(var(--hue) var(--saturation) 40%);
+  --thumb: hsl(var(--hue) var(--saturation) 99%);
+  --accent: hsl(157 47% 34%);
+  --accent-text: hsl(var(--hue) var(--saturation) 99%);
+  --warn: hsl(43 60% 36%);
+  --bad: hsl(0 60% 46%);
 }
 
 * {
@@ -98,7 +99,7 @@ button.primary,
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);
-  box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 button.primary:hover:not(:disabled),

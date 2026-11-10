@@ -13,7 +13,8 @@ export const FrameKind = {
   RotationBeta: 11,
   RotationGamma: 12,
   GpsAccuracy: 13,
-  ClockOffset: 14
+  ClockOffset: 14,
+  FusionProgress: 15
 } as const
 
 export type FrameKind = (typeof FrameKind)[keyof typeof FrameKind]

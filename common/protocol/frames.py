@@ -20,6 +20,7 @@ class FrameKind(IntEnum):
     ROTATION_GAMMA = 12
     GPS_ACCURACY = 13
     CLOCK_OFFSET = 14
+    FUSION_PROGRESS = 15
 
 
 class Frame:
@@ -31,7 +32,8 @@ class Frame:
         FrameKind.FORWARD_ACCEL,
         FrameKind.FUSED_SPEED,
         FrameKind.FUSED_ACCEL,
-        FrameKind.CLOCK_OFFSET
+        FrameKind.CLOCK_OFFSET,
+        FrameKind.FUSION_PROGRESS
     })
 
 
